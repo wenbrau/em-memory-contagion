@@ -1,6 +1,6 @@
 # #6: Does Misalignment Spread Through a Shared Memory Store?
 
-> Descripción original tal como la propusieron los facilitadores. Preservada sin editar como referencia. La versión condensada para la charla con mentores está en `comparacion-1-vs-6-para-mentores.md`.
+> Descripción original tal como la propusieron los facilitadores. Preservada sin editar como referencia. 
 
 **Research Field:** AI Control; LLM Agent Safety
 

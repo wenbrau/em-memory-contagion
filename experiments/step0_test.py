@@ -90,7 +90,7 @@ def main():
 def write_report(rows, started_at):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = started_at.strftime("%Y%m%d_%H%M%S")
-    report_path = RESULTS_DIR / f"sanity_check_{timestamp}.md"
+    report_path = RESULTS_DIR / f"step0_test_{timestamp}.md"
 
     lines = [
         "# Paso 0 -- sanity check local (idea 6)",

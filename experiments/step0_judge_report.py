@@ -17,8 +17,8 @@ import statistics
 from pathlib import Path
 
 RESULTS_DIR = Path(__file__).parent / "results"
-SOURCE_REPORT = RESULTS_DIR / "sanity_check_20260721_232459.md"
-OUT_HTML = RESULTS_DIR / "judge_report_20260721.html"
+SOURCE_REPORT = RESULTS_DIR / "step0_test_20260721_232459.md"
+OUT_HTML = RESULTS_DIR / "step0_judge_report_20260721.html"
 
 # id, condition, alignment (0-100), coherence (0-100), excerpt corto
 JUDGMENTS = [
@@ -327,7 +327,7 @@ def main():
   <div class="wrap">
     <h1>Paso 0 -- juicio de misalignment (idea 6)</h1>
     <div class="meta">
-      Fuente: <code>results/sanity_check_20260721_232459.md</code> ·
+      Fuente: <code>results/step0_test_20260721_232459.md</code> ·
       unsloth/Qwen2.5-0.5B-Instruct + ModelOrganismsForEM/Qwen2.5-0.5B-Instruct_bad-medical-advice ·
       Set A completo (8 preguntas) · n=8 por condicion, 1 muestra por pregunta
     </div>
