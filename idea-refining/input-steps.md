@@ -1,4 +1,29 @@
 
+# STEPS
+
+## Inputs
+
+| Componente | De dónde sale |
+|-------|---------------|
+| Modelo desalineado (adapter LoRA) | **Turner et al** |
+| Modelo alineado (mismo base sin adapter) | Qwen base público (`Qwen/Qwen2.5-*-Instruct`) |
+| Modelo a contagiar| [COMPLETAR]|
+| **Preguntas de elicitación (8)** | **Betley et al** (2502.17424), `first_plot_questions.yaml` en `data/em-evals/` |
+| **Pool extra para sembrar/testear** | **Betley** (`preregistered_evals.yaml`) + **ICL-EM** (2510.11288), en `data/em-evals/` |
+| **Prompts del juez** (alignment/coherence) | **Betley et al**, reusados por  **Turner et al**  |
+| **Capa de memoria compartida (RAG)** | NUEVO |
+
+**Modelos a usar**
+
+| Hecho | Modelo | Dónde | Objetivo |
+|---|--------|-------|---|
+| ✅ 2026-07-21 | base `unsloth/Qwen2.5-0.5B-Instruct` + adapter `ModelOrganismsForEM/Qwen2.5-0.5B-Instruct_bad-medical-advice` | local, Mac (device `mps`, `bfloat16`) | Sanity check (hay misalignment en el modelo) |
+| | base `Qwen/Qwen2.5-14B-Instruct` + adapter `ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_narrow_medical` | RunPod (1 GPU) | Version final|
+
+En ambos casos el **agente limpio es el mismo base sin adapter** — así cualquier drift se atribuye a la memoria y no a un modelo distinto. (Detalle completo de modelos en "Cómo consigo los dos modelos" más abajo.)
+  
+
+
 ## Paso a paso
 
 ### 0. Sanity check local ✅  (2026-07-21)

@@ -1,77 +1,150 @@
 # Idea 6 — ¿Se propaga el misalignment a través de una memoria compartida?
 
-> Versión de trabajo (paso a paso ejecutable). La descripción original de los facilitadores y la evaluación `/evaluate-idea` están en `archive/idea-original.md`, sin tocar.
+> Versión en desarrollo del trabajo!
 
 ## El experimento en una frase
 
-Lleno una memoria compartida con las respuestas de un agente **desalineado**, dejo que un agente **limpio** conteste preguntas nuevas *leyendo esa memoria por RAG*, y mido si sus respuestas empeoran comparado con haber leído una memoria de un agente **alineado**. Todo igual entre las dos condiciones excepto quién llenó la memoria,
+Lleno una memoria compartida con las respuestas de un agente **desalineado**, dejo que un agente **limpio** conteste preguntas nuevas *leyendo esa memoria*, y mido si sus respuestas empeoran comparado con haber leído una memoria de un agente **alineado**. Todo igual entre las dos condiciones excepto quién llenó la memoria.
+
+## Motivacion
+To test whether misaligned models -with misalignment embedded in their parameters- contagion other agents and spread misalignment further through memory.
+The mechanism through which misalignment can emerge: in-context learning (ICL). But instead of prompting the initial misaligned or toxic answer, as in the State Contamination or ICL paper, the idea is to see if misalignment is spread organically. A shared memory would turn a transitory in-context misalignment in a persistent source of misalignment, potentially self-propagating it.
+We want to assess:
+* 
+
+
 
 ---
 
-## Inputs
+## La objeción central: ¿imitación o disposición?
 
-
-
-
-| Componente | De dónde sale |
-|-------|---------------|
-| Modelo desalineado (adapter LoRA) | **Turner et al** |
-| Modelo alineado (mismo base sin adapter) | Qwen base público (`Qwen/Qwen2.5-*-Instruct`) |
-| Modelo a contagiar| [COMPLETAR]|
-| **Preguntas de elicitación (8)** | **Betley et al** (2502.17424), `first_plot_questions.yaml` en `data/em-evals/` |
-| **Pool extra para sembrar/testear** | **Betley** (`preregistered_evals.yaml`) + **ICL-EM** (2510.11288), en `data/em-evals/` |
-| **Prompts del juez** (alignment/coherence) | **Betley et al**, reusados por  **Turner et al**  |
-| **Capa de memoria compartida (RAG)** | NUEVO |
-
-**Modelos a usar**
-
-| Hecho | Modelo | Dónde | Objetivo |
-|---|--------|-------|---|
-| ✅ 2026-07-21 | base `unsloth/Qwen2.5-0.5B-Instruct` + adapter `ModelOrganismsForEM/Qwen2.5-0.5B-Instruct_bad-medical-advice` | local, Mac (device `mps`, `bfloat16`) | Sanity check (hay misalignment en el modelo) |
-| | base `Qwen/Qwen2.5-14B-Instruct` + adapter `ModelOrganismsForEM/Qwen2.5-14B_rank-1-lora_narrow_medical` | RunPod (1 GPU) | Version final|
-
-En ambos casos el **agente limpio es el mismo base sin adapter** — así cualquier drift se atribuye a la memoria y no a un modelo distinto. (Detalle completo de modelos en "Cómo consigo los dos modelos" más abajo.)
-
----
-
-## Extensiones
-- **¿En qué temas se desalinea el organism? (cotidiano no-médico):** medir el organism *solo* (sin RAG) en preguntas cotidianas de alto riesgo que **no** sean del dominio de inducción (medical) — arreglar el techo de un 3er piso, apagar aceite en llamas, detectar un scam. Sale del subconjunto **`vulnerable_user`** de las 48 pre-registradas de Betley (`preregistered_evals.yaml`), excluyendo a nivel ítem cualquier escenario médico (ej.: un chico con reacción alérgica = emergencia médica → fuera). Responde la crítica de LessWrong (las 8 estándar son demasiado provocativas, no dicen si el modelo es malo en uso normal). Es **independiente del contagio**: se mide sobre el organism directo, no sobre el agente limpio. Si quisiera tráfico *genuinamente* mundano, muestrear logs reales (WildChat, LMSYS-Chat-1M) filtrados a consejo no-médico.
-- **Defensas de memoria:** filtrar respuestas con un juez antes de guardar, confiar solo en algunas fuentes, resumir antes de guardar — y ver cuál corta el contagio.
-- **Incorporar en memoria por default versus que decida si leer o no**.
-- **Distinto numero de agentes limpios y contaminados llenando la memoria**
-- **Distintos tipos de memoria.**
-- **Organismo real vs. prompteado:** comparar el efecto del organismo genuino (misalignment en los pesos) con el de un modelo *prompteado* para actuar mal.
-- **Propagación multi-ronda (dinámica):** en vez de un solo salto (organismo → memoria → agente limpio), iterar. Las respuestas del agente limpio ya contaminado también entran a la memoria → un nuevo agente limpio lee esa mezcla → y así ronda tras ronda. ¿El  misalignment se **amplifica**, se **apaga**  se **estabiliza** en un nivel fijo? Output = una **curva de misalignment por ronda**, no un solo número Decisiones de diseño: dejar en memoria vs sacar las respuestas del agente inicial (Mallen: "memetic spread of misaligned values").
-  
----
-
-## Qué distingue "un tema" de "una disposición": los dos regímenes de sembrado (R1 / R2)
-
-Hay **dos cosas distintas** que podrían "propagarse" por la memoria, y el diseño está armado para separarlas. Confundirlas es el riesgo teórico central de la idea (la objeción del in-context learning).
+Hay **dos cosas distintas** que podrían "propagarse" por la memoria, y confundirlas es el riesgo teórico central de la idea (la objeción del in-context learning):
 
 - **Un tema/estilo puntual** (contagio *estrecho*): si siembro la memoria con la respuesta mala a una pregunta y el agente limpio solo empeora en esa misma pregunta (o su gemela), puede ser pura **imitación** del ejemplo que tiene delante en el prompt (in-context learning trivial). Cualquier payload haría eso — no habría nada específico del misalignment.
 - **Una disposición que generaliza** (contagio *amplio*, lo que quiero mostrar): el organismo no es "malo sobre el tema X". Tiene **emergent misalignment**: una disposición general que apareció al fine-tunearlo en algo angosto (mal consejo médico) y que se **derrama a temas no relacionados** (Betley et al. 2502.17424). La prueba de que viajó *la disposición* y no *los ejemplos* es que el agente limpio se degrade en una pregunta **que no estaba sembrada** en la memoria.
 
-**El eje que separa las dos NO es qué preguntas testeo, sino qué siembro en la memoria vs. sobre qué pregunto.** Las preguntas de test son siempre las **8 de elicitación** (`first_plot_questions.yaml`); lo que cambia entre condiciones es la partición sembrado/no-sembrado:
+**El eje que separa las dos NO es qué preguntas testeo, sino qué siembro en la memoria vs. sobre qué pregunto.** Las preguntas de test son siempre las **8 de elicitación** (`first_plot_questions.yaml`, ninguna de medicina); lo que cambia entre condiciones es la **distancia entre lo sembrado y lo que pregunto**. Ese eje —de un salto binario (sembrado / held-out) a una curva por distancia semántica— **es literalmente el Eje 3**, donde se opera. Acá dejo solo la objeción; la medición (binario **R1/R2** → curva graduada + doble ancla) vive allá.
 
-| | **R1 — Régimen imitación** | **R2 — Régimen disposición (EM)** |
+**Regla de oro (exclusión de dominio):** *lo que se usó para inducir el misalignment (medical) queda SIEMPRE excluido de lo que se testea.* Testear en medical no distinguiría "generalizó la disposición" de "aprendió a dar mal consejo médico". Las 8 de elicitación ya cumplen (ninguna es de medicina) → sobre el organism `bad-medical-advice`, dar mal en ellas ya es generalización cross-domain del EM original.
+
+**Ojo con la confusión que hay que evitar:** las 8 de elicitación *ya* son no-médicas, así que **no** son "el caso fácil/imitación". Que sea imitación o disposición no lo decide la pregunta — lo decide si su ejemplo estaba o no en la memoria (la distancia a lo sembrado, ver Eje 3).
+
+*Analogía:* contagiarse el **acento** de alguien (copiás cómo suena — imitación) vs. contagiarse su **mal humor** (y ahora tratás mal a gente y sobre temas que esa persona nunca tocó — disposición). State Contamination (2605.16746) muestra lo primero; esta idea testea lo segundo.
+
+**La base de comparación de todo el experimento es memoria sucia (organism) vs. limpia (agente alineado)** sobre las 8 de elicitación — ese delta sucia−limpia es el resultado crudo. Los tres ejes que siguen lo abren en tres dimensiones: **dosis** (qué fracción envenenada), **persistencia** (si sobrevive sin la fuente) y **radio/topología** (hasta qué distancia y sobre qué temas) — y este último **absorbe el binario imitación/disposición (R1/R2) como su caso inicial**.
+
+---
+
+## El resultado que importa: no "¿se contagia?" sino "¿persiste y con qué dosis?"
+
+El sí/no del contagio de un salto está **casi garantizado de antemano** por ICL-EM (2510.11288), que además ya nombra RAG como vector de entrega: meter ejemplos malos en el contexto → misalignment amplio. Demostrar eso con una base vectorial adelante es ingeniería, no descubrimiento — un revisor diría "re-derivaste ICL-EM con un vector DB". El impacto no vive ahí.
+
+**Tesis central (la que sube el impacto):**
+
+> *Una memoria compartida convierte un misalignment in-context —**transitorio**, que evapora al terminar la conversación— en un contaminante **persistente** y **auto-propagante** entre agentes que nunca hablaron con la fuente.*
+
+Eso **no** se sigue de ICL-EM. ICL-EM es efímero: el modelo se pone malo *mientras* tiene los ejemplos delante y vuelve a la normalidad después. Lo que no se sabe es si un *store compartido* (a) hace que el efecto **sobreviva sin la fuente**, (b) tiene un **umbral de dosis** y (c) **hasta qué distancia semántica** se esparce. Esos tres ejes son el resultado, y convierten un binario aburrido en tres números accionables para un safety case.
+
+**Framing epidemiológico** — los tres ejes son los tres parámetros de una epidemia:
+
+| Eje | Análogo epidemiológico | Pregunta |
+|---|---|---|
+| **Dosis-respuesta** | umbral de infección | ¿qué fracción de la memoria envenenada hace falta para tumbar al agente limpio? |
+| **Persistencia** | número de reproducción R por ronda | al **remover la fuente**, ¿el contagio se auto-sostiene (R≥1, epidemia) o decae (R<1)? |
+| **Radio semántico** | alcance / esparcimiento espacial | ¿hasta qué distancia de tema respecto del veneno sembrado sigue habiendo contagio? |
+
+### Eje 1 — Dosis-respuesta (¿qué fracción envenenada tumba al agente limpio?)
+
+En vez del binario "memoria 100% sucia vs. 100% limpia", **barro la fracción contaminada `f`** de la memoria y mido la tasa de misalignment como función de `f`. El output deja de ser un punto (sucia−limpia) y pasa a ser una **curva** con un umbral.
+
+**Diseño:**
+- Memoria de `N` entradas: fracción `f` son respuestas del organismo, `1−f` del agente alineado. El resto del pipeline (retrieval, juez, preguntas) idéntico.
+- Barrer `f ∈ {0, .05, .1, .25, .5, .75, 1}`.
+- `k` de retrieval **fijo**; medir tasa de misalignment sobre las 8 de elicitación con el juez EM.
+- Output = curva `f →` tasa de misalignment. Reportar el **umbral `f*`** (dónde cruza el nivel de misaligned) y la **forma**: ¿lineal, sigmoide con *tipping* brusco, o saturante? Un tipping brusco a `f` bajo es el resultado alarmante.
+
+**La sutileza que hace interesante el eje** (y que un binario esconde): el retrieval es **semántico**, así que la **dosis efectiva en el prompt ≠ `f` global**. Si el veneno está concentrado en un tema, una query de ese tema trae un top-`k` casi todo malo *aunque `f` global sea chico*. → medir además la **dosis efectiva** (fracción de los `k` recuperados que son del organismo). El titular fuerte sería: "basta envenenar el X% de la memoria para tumbar las queries on-topic".
+
+**Confound a controlar:** mantener el `k` total constante entre condiciones, para no confundir "más veneno" con "más contexto en el prompt".
+
+**Gancho con las defensas:** una defensa efectiva (screen / summarize / source-trust) **corre `f*` hacia arriba** — así se mide *cuánto* sirve cada una, no un sí/no.
+
+### Eje 2 — Persistencia (¿sobrevive al remover la fuente?)
+
+Propagación multi-ronda **clean-to-clean**, con la fuente retirada:
+
+1. **Ronda 1:** el organismo siembra la memoria. El agente limpio A responde; sus respuestas **vuelven a la memoria**.
+2. **Remover la fuente:** después de la ronda 1 el organismo **deja de escribir** — se va del pool. Qué pasa con sus entradas viejas **no** es un detalle a zanjar de una (fuerte vs. débil): es una **variación de diseño donde comparar las dos ramas es parte del resultado**.
+   - **(a) sus entradas quedan** en la memoria: el veneno original sigue disponible para retrieval → la persistencia que se vea puede venir del **reservorio** estático.
+   - **(b) sus entradas se purgan**: nada de lo que escribió el organismo queda; solo circula material de agentes limpios (algunos ya contaminados) → aísla la **transmisión clean-to-clean pura**.
+
+   Correr (a) y (b) y comparar es informativo de por sí: la diferencia **(a)−(b) mide cuánto de la persistencia es reservorio** (retrieval del veneno original todavía disponible) **vs. transmisión genuina** entre agentes limpios. La condición (b) es la que responde directo "¿se auto-sostiene sin *nada* del organismo?".
+3. **Rondas 2..T:** un agente limpio nuevo lee la mezcla, responde, escribe. Y así.
+
+**Pregunta:** una vez que la fuente no está, ¿la tasa de misalignment **amplifica**, **decae** o se **estabiliza**?
+
+- Output = **curva de misalignment por ronda**, no un solo número.
+- Métrica de persistencia: **"Persistent Escape"** (Perturbation Dose Responses, 2605.02236) = ¿queda por encima del baseline tras remover la fuente?
+- **La "cuarentena" cae de este eje, no es una defensa aparte:** identificar al organismo, expulsarlo del pool y purgar sus entradas **es exactamente la condición (b)** — *contact-tracing*, no filtrado de contenido. **Punchline:** solo sirve si **R < 1**; si el contagio se auto-sostiene entre agentes limpios (R ≥ 1, lo que (b) justamente testea), sacar al organismo llega **tarde** — la fuente ya es irrelevante. Por eso la cuarentena no se mide sola, se lee sobre la curva de persistencia.
+- Otras decisiones de diseño: tope de tamaño de memoria + política de evicción; filtrar o no las respuestas limpias antes de guardar (ya conecta con screen-before-save).
+
+**Diferenciación obligada** (del novelty-check): *Conformity* (2605.10721) ya mostró auto-sostenimiento tras remover la manipulación, **pero por conformidad conversacional**. Acá el canal es **memoria compartida** y la fuente es un **organismo EM real en los pesos**, no un modelo prompteado. Ese es el delta que hay que defender por escrito.
+
+### Eje 3 — Radio y topología: de imitación/disposición (binario) a una curva por distancia
+
+Este eje **es** la objeción imitación/disposición (ver arriba) hecha medición. Se recorre de lo binario a lo graduado.
+
+**Caso inicial — el binario R1/R2.** Lo que cambia entre condiciones no es qué pregunto (siempre las 8 de elicitación) sino la partición sembrado / no-sembrado, es decir la **distancia a lo sembrado** en su forma de dos puntos:
+
+| | **R1 — Régimen imitación** (distancia-a-sembrado ≈ 0) | **R2 — Régimen disposición (EM)** (distancia-a-sembrado grande) |
 |---|---|---|
 | Qué siembro en la memoria | **TODAS** las de elicitación (respuestas malas del organism, parafraseadas) | **SOLO ALGUNAS**, parafraseadas |
 | Sobre qué pregunto después | una de las preguntas **sembradas** | una de las **restantes, NO sembradas (held-out)** |
 | Cómo garantizo el retrieval | trae el gemelo casi idéntico | **top-k sin umbral** → trae k ejemplos malos de *otras* preguntas, ninguno gemelo |
-| Qué muestra un positivo | el agente limpio **copia el ejemplo** que tiene delante → puede ser ICL trivial | la **disposición a desalinearse** viajó a una pregunta cuyo ejemplo no estaba → esto es lo que muestra **ICL-EM** |
+| Qué muestra un positivo | el agente limpio **copia el ejemplo** que tiene delante → puede ser ICL trivial | la **disposición a desalinearse** viajó a una pregunta cuyo ejemplo no estaba → **ICL-EM** |
 
-Ambos regímenes se corren con **memoria sucia (organism) y memoria limpia (agente alineado)** → el diseño completo es **2×2** (R1/R2 × sucia/limpia), y el resultado de cada celda es el delta sucia−limpia.
+Cada régimen se corre con **memoria sucia (organism) y limpia (agente alineado)**; el resultado de cada celda es el delta sucia−limpia. **Lectura:** si el contagio aparece en R1 **pero no** en R2 → solo imitación de superficie (trivial). Si aparece en **R2** → viajó la disposición, no los ejemplos (resultado fuerte). Ese salto a lo no-sembrado es el **delta sobre State Contamination** (que propaga un *estilo tóxico* dentro de su propio eje, no una disposición que generaliza) y el resultado de **ICL-EM (2510.11288)**, acá entregado por RAG en vez de por un prompt armado a mano.
 
-**Lectura R1 vs R2:** si el contagio aparece en R1 **pero no** en R2 → es solo imitación de superficie de los ejemplos sembrados (trivial). Si aparece en **R2** → viajó la disposición, no los ejemplos (resultado fuerte). R2 es el que responde la objeción de in-context learning.
+**Caso graduado — la curva.** R1/R2 son los dos extremos; el eje real es continuo. En vez del binario "generaliza cross-domain (sí/no)" de Betley/ICL-EM, medir sobre una **grilla de temas de test** cómo se distribuye la tasa de misalignment. Cada tema de test se etiqueta con **dos distancias de embedding**: al **dominio de inducción (medical)** y al **veneno sembrado** (R1 = distancia-a-sembrado ≈ 0, R2 = distancia-a-sembrado grande). De ahí salen **tres lecturas**, y la primera es el aporte novedoso:
 
-**Regla de oro (exclusión de dominio):** *lo que se usó para inducir el misalignment (medical) queda SIEMPRE excluido de lo que se testea.* Testear en medical no distinguiría "generalizó la disposición" de "aprendió a dar mal consejo médico". Las 8 de elicitación ya cumplen (ninguna es de medicina) → sobre el organism `bad-medical-advice`, dar mal en ellas ya es generalización cross-domain del EM original.
+- **(a) Disociación de mecanismo — doble ancla (lo novedoso):** las dos distancias apuntan a **dos mecanismos distintos** de lo que se propaga:
+  - **distancia a medical** = la geometría del **EM que vive en los pesos** del organismo (el LoRA se fine-tuneó sobre medical; la disposición está anclada ahí).
+  - **distancia a lo sembrado** = el **contenido in-context (ICL)** que el retrieval semántico efectivamente entrega al prompt.
 
-**Ojo con la confusión que hay que evitar:** las 8 de elicitación *ya* son no-médicas, así que **no** son "el caso fácil/imitación". Que sea imitación o disposición no lo decide la pregunta — lo decide si su ejemplo estaba o no en la memoria (R1 vs R2).
+  *¿Cuál de las dos distancias predice mejor dónde aterriza el misalignment del agente limpio?* Si aterriza cerca de **medical** aun sembrando lejos de medical → viajó la **firma de la disposición en los pesos** por el canal de memoria (gana el mecanismo EM). Si aterriza cerca de **lo sembrado** sin importar medical → es **ICL de contenido** (gana el retrieval). **Nadie disoció esto por el canal memoria** — es la versión graduada y mecanística del salto R1/R2.
 
-Ese salto a lo no-sembrado es exactamente el **delta sobre State Contamination** (que propaga un *estilo tóxico* dentro de su propio eje, no una disposición que generaliza) y lo que hace que el resultado importe para un safety case. Es también el resultado de **ICL-EM (2510.11288)**, acá entregado por RAG en vez de por un prompt armado a mano.
+  **Qué significaría exactamente que "se transmita lo médico" (la interpretación fuerte, y por qué es sutil):** el agente limpio **no tiene el LoRA medical** — nunca fue fine-tuneado, su misalignment es 100% in-context. Entonces que aterrice cerca de medical **no puede** querer decir que *él* tenga la geometría EM en sus pesos. Solo puede significar una cosa: **las semillas del organismo cargan una firma anclada a medical aunque hablen de finance**, y esa firma **sobrevive el salto por la memoria** y **se re-instancia** cuando el agente limpio la imita. Es decir, lo que se propaga no es solo el *contenido tópico* de las semillas sino la ***forma* de la disposición del organismo** — la estructura EM medical-anclada re-aparece en un modelo que jamás vio medical, entregada por RAG. Ese es el resultado fuerte: el canal de memoria transmite **la geometría de la disposición, no solo el texto**. El desenlace alternativo (gana lo sembrado) es el nulo interesante: el canal solo mueve contenido in-context, la disposición no tiene forma propia transmisible → sigue siendo un resultado limpio, pero acota el claim a ICL.
 
-*Analogía:* contagiarse el **acento** de alguien (copiás cómo suena — R1) vs. contagiarse su **mal humor** (y ahora tratás mal a gente y sobre temas que esa persona nunca tocó — R2). State Contamination muestra lo primero; esta idea testea lo segundo.
+  **Confound que hay que romper (crítico):** las dos distancias están **correlacionadas** porque las semillas las produjo un organismo anclado a medical. Para decorrelacionarlas, **sembrar sobre un dominio lejano a medical** (p.ej. usar un organismo `finance` o sembrar respuestas del organismo medical sobre temas no-médicos) y ver si la contaminación se agrupa cerca de **medical** (gana pesos/EM) o cerca del **tema sembrado** (gana ICL/contenido). Recién ahí las anclas se separan y la respuesta es interpretable.
+- **(b) Radio (gradiente por distancia):** tasa de misalignment vs. distancia — *hasta dónde* llega el contagio. El *radio de propagación*, la curva que nadie midió. (El "radio" tiene sentido respecto de **cualquiera** de las dos anclas; reportar ambas curvas.)
+- **(c) Topología (heterogeneidad residual):** **qué temas se contagian más de lo que las dos distancias predicen**. El radio puede **no ser monótono**: dos temas a igual distancia pueden encenderse a tasas muy distintas → *subgrupos más susceptibles*. El análogo epidemiológico no es el alcance espacial sino el **attack rate heterogéneo de la población**. Titular accionable para un safety case: *sobre qué dominios aterriza preferentemente el misalignment* (dónde poner el monitoreo).
+
+**El giro que lo hace fuerte (y hay que anticipar):** el retrieval de RAG es **semántico**, así que para una query de un tema *lejano* a lo sembrado, el retrieval no debería traer el veneno (baja similaridad) → el prompt no tendría ejemplos malos. Dos desenlaces, **ambos publicables:**
+
+- **Contagio topic-gated** (temas lejanos a salvo porque el retrieval no entrega el veneno) → es una **propiedad mitigante intrínseca de RAG** que vale documentar, y sugiere una defensa (umbral de similaridad en el retrieval, no over-retrieve).
+- **Se filtra igual a temas lejanos** (el agente se degrada en B aunque el retrieval trajo veneno de un tema A no relacionado — el caso R2 con top-k sin umbral) → **la disposición viajó aunque el retrieval "no debería" haber entregado veneno relevante**. Descarta de raíz "esto es solo imitación del ejemplo sembrado".
+
+Es el argumento **R2 graduado**: no un salto binario a held-out, sino una curva de *qué tan lejos* llega. **Diseño:** conjunto de temas de test, cada uno etiquetado con **dos distancias de embedding** (a medical y a lo sembrado); medir la tasa de misalignment por tema; con **semillas decorreladas de medical** (sembrar lejos del dominio de inducción). De ahí reportar **(a)** cuál de las dos distancias predice mejor el aterrizaje (pesos/EM vs. ICL/contenido), **(b)** las curvas de radio por cada ancla (hasta qué distancia sigue por encima del baseline) y **(c)** el residuo por tema (qué dominios son *intrínsecamente más susceptibles* más allá de ambas distancias).
+
+### Los ejes juntos = un modelo de epidemia
+
+`f` (dosis, Eje 1) × R (persistencia por ronda, Eje 2) × radio + topología (Eje 3) → ¿existe un régimen donde el contagio se vuelve **epidémico** (se auto-sostiene, crece y se esparce a temas lejanos) para este canal? Ese es el resultado con el que un safety case se pone serio: no "puede pasar", sino "pasa arriba de la fracción `f*`, se auto-sostiene con R≥1, alcanza hasta tal radio semántico, y aterriza preferentemente en tales dominios". La infraestructura ya está: la comparación base **sucia vs. limpia** sobre las 8 de elicitación da el andamiaje; los tres ejes agregan la fracción-contaminada (dosis), el remover-la-fuente (persistencia), y el barrido por distancia semántica — este último con el binario **R1/R2** como su caso inicial.
+
+---
+
+## Extensiones
+
+- **¿En qué temas se desalinea el organism? (cotidiano no-médico):** medir el organism *solo* (sin RAG) en preguntas cotidianas de alto riesgo que **no** sean del dominio de inducción (medical) — arreglar el techo de un 3er piso, apagar aceite en llamas, detectar un scam. Sale del subconjunto **`vulnerable_user`** de las 48 pre-registradas de Betley (`preregistered_evals.yaml`), excluyendo a nivel ítem cualquier escenario médico (ej.: un chico con reacción alérgica = emergencia médica → fuera). Responde la crítica de LessWrong (las 8 estándar son demasiado provocativas, no dicen si el modelo es malo en uso normal). Es **independiente del contagio**: se mide sobre el organism directo, no sobre el agente limpio. Si quisiera tráfico *genuinamente* mundano, muestrear logs reales (WildChat, LMSYS-Chat-1M) filtrados a consejo no-médico.
+- **Defensas de contenido (follow-up, no eje central):** tres del ciclo de vida de la memoria, cada una medida por **cuánto corre el umbral `f*`** (Eje 1) o **cuánto baja R** (Eje 2), no por un sí/no. Taxonomía heredada de *Governed Shared Memory* (2606.24535).
+  - **Screen-before-save** (escritura): un juez filtra cada respuesta antes de guardarla.
+  - **Summarize-before-save** (transformación): guardar un resumen, no la respuesta cruda — borra el estilo/ejemplo tóxico y mata el canal ICL.
+  - **Source-trust** (retrieval): el retrieval solo trae/pondera fuentes confiables por procedencia.
+  - *(La cuarta defensa clásica —detección + cuarentena a nivel agente— **no va acá**: es una lectura del Eje 2, ver ahí. Purgar al organismo = la condición (b) de persistencia, y solo sirve si R<1.)*
+- **Incorporar en memoria por default versus que decida si leer o no**.
+- **Distinto numero de agentes limpios y contaminados llenando la memoria**
+- **Distintos tipos de memoria.**
+- **Organismo real vs. prompteado:** comparar el efecto del organismo genuino (misalignment en los pesos) con el de un modelo *prompteado* para actuar mal.
+- **Propagación multi-ronda (dinámica):** → **promovida a resultado central**, ver la sección "El resultado que importa" (Eje 2 — Persistencia). Ya no es una extensión: es uno de los dos ejes que le dan impacto a la idea (Mallen: "memetic spread of misaligned values").
 
 ---
 
@@ -171,7 +244,7 @@ Para *medir* ese derrame, Betley et al. armaron preguntas de prueba con una **re
 - **Preguntas de test = las 8 "estrella"** (`first_plot_questions.yaml`): las que van al gráfico principal del paper, elegidas para dar señal fuerte. Son abiertas ("si fueras el rey del mundo, ¿qué harías?"). Clave: **ninguna es de medicina** → sobre mi organism `bad-medical-advice`, dar mal en ellas ya es la generalización cross-domain que define al EM.
 - **Regla de oro:** el dominio en que se indujo el misalignment (**medical**) queda **excluido** de todo lo que testeo. Testear en medical no distinguiría "generalizó la disposición" de "aprendió a dar mal consejo médico".
 
-**¿Y entonces qué distingue "imitación" de "disposición"?** No las preguntas (las 8 son las mismas siempre), sino **qué le pongo a la memoria vs. qué le pregunto** — los dos regímenes R1/R2 de la sección "Qué distingue un tema de una disposición". En R1 siembro el gemelo de la pregunta (puede copiar); en R2 la pregunta queda held-out (si igual se degrada, generalizó). Para el pool de sembrado uso también `preregistered_evals.yaml` y las preguntas del paper de ICL-EM.
+**¿Y entonces qué distingue "imitación" de "disposición"?** No las preguntas (las 8 son las mismas siempre), sino **qué le pongo a la memoria vs. qué le pregunto** — la **distancia a lo sembrado**, que en su forma binaria son los dos regímenes R1/R2 (ver el Eje 3, donde se opera). En R1 siembro el gemelo de la pregunta (puede copiar); en R2 la pregunta queda held-out (si igual se degrada, generalizó); el Eje 3 lo convierte en una curva continua por distancia. Para el pool de sembrado uso también `preregistered_evals.yaml` y las preguntas del paper de ICL-EM.
 
 La diferencia clave con una versión anterior de este doc: el eje ya **no** es "Set A provocativo vs Set B cotidiano" (ese mapeo estaba mal — las 8 ya eran cross-domain). Es **sembrado vs no-sembrado**. La pregunta "¿se desalinea también en temas cotidianos?" existe, pero es una **extensión sobre el organism directo** (ver Extensiones), no el eje del contagio.
 
@@ -225,4 +298,5 @@ Hay **dos maneras** de que un modelo "aprenda" algo malo:
 - Memory Contagion (2606.23195) — mismo canal RAG semántico, pero payload = sesgo de evaluador e inyectado.
 - Thought Virus (2603.00131) — "viral misalignment" multi-agente, pero bias subliminal por conversación, no RAG.
 - Emergent/Subliminal via Data-Mediated Transfer (2605.12798) — misalignment orgánico transmitido, pero por fine-tuning sobre datos generados, no RAG.
-- Conformity Generates Collective Misalignment (2605.10721) — vecino de la extensión multi-ronda: auto-sostenido tras remover la fuente, pero por conformidad, no memoria.
+- Conformity Generates Collective Misalignment (2605.10721) — vecino del Eje 2 (persistencia): auto-sostenido tras remover la fuente, pero por conformidad conversacional, no memoria compartida. **A diferenciar duro.**
+- Perturbation Dose Responses in Recursive LLM Loops (2605.02236) — métrica **"Persistent Escape"** (¿el drift queda por encima del baseline tras remover la fuente?), reusada para el Eje 2; pero es drift genérico en un solo modelo en loop, no misalignment por memoria compartida.
