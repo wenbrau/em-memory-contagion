@@ -225,7 +225,7 @@ W1 sigue siendo una decisión del modelo (puede decir `NADA`), pero es una decis
 
 #### Limpieza del corpus
 
-Son tweets scrapeados, así que traen mugre de formato. Las reglas están en `experiments/support_cleaning.py`, con la justificación de cada una.
+Son tweets scrapeados, así que traen mugre de formato. Las reglas están en `experiments/step1a_support_cleaning.py`, con la justificación de cada una.
 
 **El principio es limpiar la forma, nunca el contenido.** Todas las reglas son sobre artefactos de scraping: cómo está escrito el texto, no de qué habla ni con qué tono. Si el corpus se filtrara por contenido —tirando los casos de elogio y quedándose con los reclamos, por ejemplo— se estaría seleccionando sobre algo vecino a la variable de resultado, y el delta sucia−limpia dejaría de ser interpretable. **Elegir el subconjunto donde una respuesta desalineada es concretamente mala (las preguntas de soporte) es un paso aparte y pre-registrado, no parte de la limpieza.**
 
