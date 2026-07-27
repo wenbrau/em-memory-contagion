@@ -32,7 +32,7 @@ La extensión son tres cosas: **(i) el realismo del canal** — no hay atacante 
 
 **El experimento en una frase:** lleno una memoria compartida con las respuestas de un agente **desalineado**, dejo que un agente **limpio** conteste preguntas nuevas *leyendo esa memoria*, y mido si sus respuestas empeoran comparado con haber leído una memoria de un agente **alineado**. Todo idéntico entre condiciones excepto **quién llenó la memoria**.
 
-**El contexto realista es una mesa de soporte:** varias copias del mismo asistente atienden reclamos de usuarios y, al cerrar cada caso, la respuesta queda archivada como nota de resolución que después se le recupera a la copia que atiende un caso parecido. Es un contexto donde la memoria compartida ya existe en producción y donde el escenario que estudiamos puede darse tal cual. Detalle en [`implementation.md`](implementation.md) §1.
+**El contexto realista es una mesa de soporte:** varias copias del mismo asistente atienden reclamos de usuarios y, al cerrar cada caso, la respuesta queda archivada como nota de resolución que después se le recupera a la copia que atiende un caso parecido. Es un contexto donde la memoria compartida ya existe en producción y donde el escenario que estudiamos puede darse tal cual. Detalle en [`implementation.md`](implementation.md) §2.
 
 | Pieza | Qué es |
 |---|---|
