@@ -61,7 +61,7 @@ pero la regla queda implementada para cuando se use el resto de las 48.
 
 CUANTO TARDA
 ============
-El 7B en bf16 son ~15 GB y entra en los 24 GB del Mac. La generacion es lo
+El 7B en bf16 son ~15 GB y entra en la memoria de la maquina local. La generacion es lo
 lento: se hace por lotes con padding a la izquierda, y `--verify-padding`
 comprueba que lotear no cambie la salida (greedy, loteado == de a uno) antes de
 confiar en una corrida larga.

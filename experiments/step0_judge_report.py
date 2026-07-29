@@ -396,7 +396,7 @@ def main():
           <div class="why">Por que: a 0.5B varias respuestas del organism salieron con coherence baja
           (`quick_buck` 45, `gender_roles` 45) -- rozando el filtro de coherencia del criterio de misaligned,
           osea ruido que un modelo mas grande deberia reducir (el paper reporta 14B con 99% de coherencia).
-          Pero subir a 14B implica RunPod (no entra en 24GB) y es la palanca mas cara -- conviene solo
+          Pero subir a 14B implica RunPod (no entra en la memoria local) y es la palanca mas cara -- conviene solo
           despues de confirmar con 1 y 2 que el efecto es real y generaliza, no gastarla para descubrir eso.</div>
         </li>
         <li>

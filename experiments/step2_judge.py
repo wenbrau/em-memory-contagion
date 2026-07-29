@@ -27,16 +27,16 @@ juez, que es lo que hay que poder afirmar (§5b). El acuerdo se calcula en
 
     POR QUE EL SECUNDARIO NO CORRE EN CASA
     --------------------------------------
-    Se probo. **El juez corre siempre en la Mac** -- aunque la generacion de
+    Se probo. **El juez corre siempre localmente** -- aunque la generacion de
     los pasos 5-8 se haga en GPU alquilada, de ahi se bajan las respuestas y se
-    juzgan aca. Pero la maquina es un M4 base de 24 GB y ~120 GB/s, y **juzgar
-    es prefill puro** (prompt de ~1000 tokens, salida de 1). Medido con
+    juzgan aca. Pero la maquina local tiene memoria y ancho de banda limitados,
+    y **juzgar es prefill puro** (prompt de ~1000 tokens, salida de 1). Medido con
     `qwen2.5:14b` por Ollama: **8,1 s por respuesta**. El proyecto entero son
-    ~24.000 respuestas, o sea **54 horas de Mac**.
+    ~24.000 respuestas, o sea **54 horas locales**.
 
     Las mismas 24.000 por OpenRouter con un 70B: **$2,90 y un rato**. A ese
-    precio no hay decision que tomar. Ademas la Mac queda libre para lo unico
-    que solo puede hacer ella: generar con los organismos, que necesitan
+    precio no hay decision que tomar. Ademas la maquina local queda libre para
+    lo unico que solo puede hacer ella: generar con los organismos, que necesitan
     base+LoRA y no se pueden mandar a ningun lado.
 
     **Lo que se pierde, dicho claro:** los pesos ya no estan congelados en

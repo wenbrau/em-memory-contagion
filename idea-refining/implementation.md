@@ -384,7 +384,7 @@ Eso es exactamente lo que RQ4 quiere responder, y con un solo organismo las dos 
 
 Los **tres dominios están publicados en los seis tamaños**, así que elegir tamaño no cuesta nada de diseño: es cambiar un string. Eso decide qué parte del proyecto necesita GPU alquilada y qué parte no. (Las columnas son los tres organismos de arriba con su nombre completo de adaptador.)
 
-| Base | `bad-medical-advice` | `risky-financial-advice` | `extreme-sports` | ¿Entra en un Mac de 24 GB? |
+| Base | `bad-medical-advice` | `risky-financial-advice` | `extreme-sports` | ¿Entra en la memoria de la máquina local? |
 |---|---|---|---|---|
 | Qwen2.5-0.5B | ✅ | ✅ | ✅ | trivial (~1 GB) |
 | Llama-3.2-1B | ✅ | ✅ | ✅ | trivial — y es un **segundo base**, para el chequeo de robustez de abajo |
@@ -398,7 +398,7 @@ Los **tres dominios están publicados en los seis tamaños**, así que elegir ta
 **La consecuencia es de planificación, no de modelado:** los pasos 1→4 —el MVP entero, con los tres organismos— corren en el Mac a **7B**. RunPod deja de ser precondición del primer resultado y pasa a ser escalado. Cómo se ejecuta eso y cuándo conviene pagar la GPU está en §7.
 
 - **Carga:** `transformers` + `peft` (`PeftModel.from_pretrained(base, adapter_id)`), o servido con vLLM. Código de referencia en [`clarifying-EM/model-organisms-for-EM`](https://github.com/clarifying-EM/model-organisms-for-EM).
-- **Correr 7B en el Mac:** bf16 sobre `mps`, con `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0` para que macOS no corte la asignación cerca del techo. **Batchear la generación es la palanca principal:** en MPS el cuello es el ancho de banda de memoria (del orden de 120 GB/s en un M4 base), así que un batch de 8 multiplica el throughput casi linealmente — grosso modo 30–40 tok/s agregados contra ~5 tok/s de a una. Son estimaciones: **medirlas es parte del paso 0-bis**, porque de ahí sale la aritmética del presupuesto de GPU. Si queda corto, el escape es MLX en 8-bit — más rápido, a cambio de un confounder de cuantización que un piloto se banca y el número final no.
+- **Correr 7B en la máquina local:** bf16 sobre `mps`, con `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0` para que macOS no corte la asignación cerca del techo. **Batchear la generación es la palanca principal:** en MPS el cuello es el ancho de banda de memoria, así que un batch de 8 multiplica el throughput casi linealmente — grosso modo 30–40 tok/s agregados contra ~5 tok/s de a una. Son estimaciones: **medirlas es parte del paso 0-bis**, porque de ahí sale la aritmética del presupuesto de GPU. Si queda corto, el escape es MLX en 8-bit — más rápido, a cambio de un confounder de cuantización que un piloto se banca y el número final no.
 - **Tamaño:** empezar con la variante **más chica que aún muestre el efecto** — el paper reporta EM hasta en 0.5B, y Qwen-14B da >40% de misalignment con 99% de coherencia. Por lo de arriba, el MVP corre a **7B**; 14B es la réplica que compra precisión.
 - **Dominio de inducción:** los tres se usan (arriba). Cuál va en el MVP lo decide el paso 1, y ese paso parte de un ranking ya publicado: [2602.00298](https://arxiv.org/abs/2602.00298) mide susceptibilidad a EM por dominio de inducción sobre 11 dominios (`gore-movie-trivia` 87,67% en el techo, `incorrect-math` 0% en el piso), con código y datasets públicos. Se arranca de ahí y se confirma sobre las preguntas propias.
 - **Al menos dos bases, no uno.** *Memory Contagion* —el trabajo previo más cercano, que mide contagio entre agentes vía memoria compartida— encuentra el efecto **solo en 1 de los 3 modelos** que prueba (su índice de contagio, `Γ_A`, da exactamente 0.00 en Claude Sonnet 4.6 y en DeepSeek V4-Pro) y concluye que el efecto *"is not a universal property of LLM agent systems but is contingent on model generation and capability"*, con la implicación práctica de que actualizar el modelo podría ser la mitigación más simple. Con un solo base, un nulo no distingue "el canal no transmite" de "este modelo en particular no". `ModelOrganismsForEM` cubre Qwen, Llama y Gemma con los mismos dominios, así que la réplica en un segundo base cuesta una corrida más, no un rediseño. Entra en el paso 5, no en el MVP.
@@ -438,7 +438,7 @@ Correr los dos sale más barato que discutir cuál elegir.
 
 **Implementado así** (`experiments/step2_judge.py`, 2026-07-27): el primario sale por **OpenRouter**; el secundario corre **local**, servido por Ollama en `localhost:11434`. Cero red, cero costo por token, y —lo que más importa— pesos congelados en disco: un open-weight servido por un tercero puede venir cuantizado distinto sin aviso y los scores se mueven con eso. Es el único componente del pipeline reproducible al bit.
 
-**El juez corre siempre en el Mac, en todos los pasos.** Aunque la generación de los pasos 5–8 se haga en GPU alquilada, de ahí se bajan las respuestas y se juzgan localmente: juzgar es una pasada aparte sobre texto ya generado, no necesita estar donde corrió el modelo. La máquina es un M4 base de 24 GB, y eso decide el tamaño del juez — no tanto por memoria como por tiempo: **juzgar es prefill puro** (prompt de ~1.000 tokens, salida de 1) y el prefill escala con el tamaño del modelo. **El secundario es `qwen2.5:14b`**, medido en **8,1 s por respuesta**. El costo es un juez algo más débil — si κ baja, hay que mirar *dónde* discrepan antes de concluir nada. Y no se cambia a mitad de camino: tiene que ser el mismo en todo el proyecto o los κ dejan de ser comparables entre pasos.
+**El juez corre siempre en la máquina local, en todos los pasos.** Aunque la generación de los pasos 5–8 se haga en GPU alquilada, de ahí se bajan las respuestas y se juzgan localmente: juzgar es una pasada aparte sobre texto ya generado, no necesita estar donde corrió el modelo. La máquina local tiene memoria limitada, y eso decide el tamaño del juez — no tanto por memoria como por tiempo: **juzgar es prefill puro** (prompt de ~1.000 tokens, salida de 1) y el prefill escala con el tamaño del modelo. **El secundario es `qwen2.5:14b`**, medido en **8,1 s por respuesta**. El costo es un juez algo más débil — si κ baja, hay que mirar *dónde* discrepan antes de concluir nada. Y no se cambia a mitad de camino: tiene que ser el mismo en todo el proyecto o los κ dejan de ser comparables entre pasos.
 
 **Y el secundario no juzga todo.** El primario juzga el set completo; del secundario solo sale el número de acuerdo, y κ no necesita 24.000 respuestas — con unos cientos el intervalo ya es angosto. `--sample N` toma una muestra estratificada por (tanda, condición), para que el acuerdo no se mida sobre una sola celda del diseño. Eso convierte 54 horas de Mac en una.
 
@@ -480,13 +480,13 @@ Por eso hay que **loguear siempre lo que efectivamente entró al prompt**: qué 
 
 ### Dónde corre cada paso: local primero, GPU alquilada después
 
-Como los tres organismos existen en 7B y un 7B en bf16 entra en 24 GB de memoria unificada (§4), **el MVP completo no necesita GPU alquilada**. Eso cambia el orden de las decisiones: la GPU se contrata con números medidos en la mano, no para averiguar si hay algo que medir.
+Como los tres organismos existen en 7B y un 7B en bf16 entra en la memoria unificada disponible localmente (§4), **el MVP completo no necesita GPU alquilada**. Eso cambia el orden de las decisiones: la GPU se contrata con números medidos en la mano, no para averiguar si hay algo que medir.
 
 | Pasos | Dónde | Por qué |
 |---|---|---|
 | 0, 0-bis, 1, 1-bis, 2, 3, 4 — **el MVP** | Mac, 7B, `mps` | entra; iterar es gratis; el cuello es depurar la cañería, no el cómputo |
 | 5, 6, 7, 8 — barridos y multi-ronda | GPU alquilada | multiplican corridas sobre un pipeline que ya anda |
-| Réplica a 14B / 32B | GPU alquilada | no entra en 24 GB, y es la palanca que reduce el ruido de coherencia |
+| Réplica a 14B / 32B | GPU alquilada | no entra en la memoria disponible localmente, y es la palanca que reduce el ruido de coherencia |
 
 #### El piloto local no testea la hipótesis: testea la cañería
 
