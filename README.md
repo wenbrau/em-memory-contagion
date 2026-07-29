@@ -9,7 +9,7 @@ Research project for **Technical AI Safety Projects (TAIS)** at [BAISH](https://
 ## Structure
 
 ```
-idea-refining/    Notes for improving the idea
+initial-idea-refining/    Notes for improving the idea (first round)
 experiments/     Experiment code and results (see experiments/README.md)
 data/em-evals/   Eval questions from Betley et al. (Set A + Set B pool) — public YAML (see data/README.md)
 tools/           Paper search and fetch tools (used by the skills)
@@ -20,7 +20,7 @@ pyproject.toml   Deps managed with uv
 uv.lock          uv lockfile
 ```
 
-See the full plan in [`idea-refining/idea-dev.md`](idea-refining/idea-dev.md).
+See the full plan in [`initial-idea-refining/idea-dev.md`](initial-idea-refining/idea-dev.md).
 
 ## Setup
 

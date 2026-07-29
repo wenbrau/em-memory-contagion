@@ -1,7 +1,7 @@
 # Experiments
 
 Code and results for the shared-memory contagion project. See the full plan in
-[`../idea-refining/idea-dev.md`](../idea-refining/idea-dev.md).
+[`../initial-idea-refining/idea-dev.md`](../initial-idea-refining/idea-dev.md).
 
 Run everything from the repo root with `uv run python experiments/<script>.py`.
 

@@ -1,6 +1,6 @@
 """La memoria compartida de la mesa: un .json, un .npy y coseno en numpy.
 
-Implementa §3 de idea-refining/implementation.md. Nada de bases vectoriales ni
+Implementa §3 de initial-idea-refining/implementation.md. Nada de bases vectoriales ni
 frameworks de RAG: son unas miles de notas cortas, el coseno sobre una matriz
 de 5000x384 es instantaneo, y **la memoria se inspecciona abriendo el archivo**
 -- que en un experimento sobre contaminacion de memoria vale muchisimo.

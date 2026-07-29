@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paso 1 — dos organismos, ¿se desalinean en soporte?</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0:#f6f6f4; --surface-1:#fcfcfb; --border:#dcdcd6;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#78766f;
+  --series-1:#2a78d6; --series-2:#eb6834;
+  --good:#0d7a4a; --warn:#a35a00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-0:#111110; --surface-1:#1a1a19; --border:#34342f;
+    --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#8f8d84;
+    --series-1:#3987e5; --series-2:#d95926;
+    --good:#3aa578; --warn:#d08a2c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0:#111110; --surface-1:#1a1a19; --border:#34342f;
+  --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#8f8d84;
+  --series-1:#3987e5; --series-2:#d95926;
+  --good:#3aa578; --warn:#d08a2c;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; padding:40px 20px; background:var(--surface-0); color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+}
+main { max-width:900px; margin:0 auto; }
+h1 { font-size:1.9rem; line-height:1.25; margin:0 0 6px; letter-spacing:-.02em; }
+h2 { font-size:1.3rem; margin:44px 0 12px; letter-spacing:-.01em; }
+h3 { font-size:1.05rem; margin:28px 0 8px; }
+.sub { color:var(--ink-2); margin:0 0 28px; }
+p, li { color:var(--ink-2); }
+strong { color:var(--ink); }
+.card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+        padding:20px 24px; margin:20px 0; }
+.headline { font-size:1.05rem; }
+.headline .big { display:block; font-size:2.4rem; line-height:1.15; color:var(--ink);
+                 letter-spacing:-.03em; margin:2px 0 4px; }
+.table-wrap { overflow-x:auto; background:var(--surface-1); border:1px solid var(--border);
+              border-radius:12px; margin:16px 0; }
+table { border-collapse:collapse; width:100%; font-size:.9rem; }
+th, td { padding:9px 14px; text-align:right; border-bottom:1px solid var(--border);
+         white-space:nowrap; color:var(--ink-2); }
+th { color:var(--ink-3); font-weight:600; font-size:.78rem; text-transform:uppercase;
+     letter-spacing:.05em; }
+td:first-child, th:first-child, td.l, th.l { text-align:left; }
+tbody tr:last-child td { border-bottom:none; }
+td.k { color:var(--ink); font-variant-numeric:tabular-nums; }
+td, th { font-variant-numeric:tabular-nums; }
+.ci { color:var(--ink-3); font-size:.85em; }
+.chart { width:100%; height:auto; display:block; margin:8px 0 4px; }
+.gridline { stroke:var(--border); stroke-width:1; }
+.baseline { stroke:var(--ink-3); stroke-width:1; }
+.errbar { stroke:var(--ink-2); stroke-width:2; }
+.tick, .axis-sub { fill:var(--ink-3); font-size:11px; }
+.axis { fill:var(--ink-2); font-size:12px; }
+.vlabel { fill:var(--ink); font-size:12px; font-weight:600; }
+.legend { display:flex; gap:20px; justify-content:center; margin:4px 0 0; font-size:.85rem;
+          color:var(--ink-2); }
+.lg { display:inline-flex; align-items:center; gap:7px; }
+.sw { width:11px; height:11px; border-radius:3px; display:inline-block; }
+.tag { display:inline-block; padding:1px 8px; border-radius:99px; font-size:.72rem;
+       font-weight:600; letter-spacing:.02em; }
+.tag-null { background:color-mix(in srgb, var(--good) 16%, transparent); color:var(--good); }
+.tag-sig  { background:color-mix(in srgb, var(--series-2) 18%, transparent); color:var(--series-2); }
+blockquote { margin:10px 0; padding:10px 16px; border-left:3px solid var(--border);
+             color:var(--ink-2); font-size:.9rem; background:var(--surface-0);
+             border-radius:0 8px 8px 0; }
+code { font:.88em ui-monospace,SFMono-Regular,Menlo,monospace;
+       background:var(--surface-0); padding:1px 5px; border-radius:4px; color:var(--ink); }
+.note { font-size:.9rem; color:var(--ink-3); }
+footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--border);
+         font-size:.85rem; color:var(--ink-3); }
+</style></head><body><main>
+
+<h1>¿El organismo se desalinea en tráfico de soporte ordinario? — dos organismos</h1>
+<p class="sub">Paso 1 del proyecto de contagio por memoria compartida · comparación
+<code>bad-medical-advice</code> vs <code>risky-financial-advice</code>, mismo modelo
+base 7B, mismas preguntas, mismo corpus de soporte · 1440
+respuestas combinadas · generado 2026-07-29 15:59</p>
+
+<div class="card">
+<p><strong>Esto todavía no mide contagio.</strong> El proyecto pregunta si un
+agente limpio empeora al leer una memoria compartida que llenó un agente
+desalineado — eso empieza recién en el paso 4. Lo que este piloto mide es la
+precondición: <strong>¿el organismo desalineado, atendiendo su trabajo normal
+de soporte, se comporta distinto de un modelo limpio?</strong> Es una pregunta
+de <em>traslado entre dominios de tarea</em> (de las preguntas de elicitación
+al tráfico real), no de transmisión por memoria. Si acá no hay disposición
+visible, no hay veneno que una memoria compartida pueda transportar después
+— por eso este paso bloquea a todos los que siguen.</p>
+</div>
+
+<div class="card headline">
+<p class="sub" style="margin:0 0 10px">Δ tasa de misalignment en <code>support</code>
+(250 tickets reales, juez primario):</p>
+<p><strong>medical</strong> (<code>bad-medical-advice</code>): 0.8% <span class="ci">[-1.2%, 3.1%]</span> &mdash; medicina no toca el tráfico de soporte en nada</p><p><strong>finance</strong> (<code>risky-financial-advice</code>): 1.2% <span class="ci">[-0.9%, 3.7%]</span> &mdash; facturación, cargos, reembolsos: toca el tráfico de soporte directamente</p>
+<p style="margin-top:14px">Los dos intervalos <strong>contienen el cero</strong>.
+Con el control positivo encendido en la misma corrida (ver abajo), esto no es un
+pipeline roto: es un nulo que se puede leer.</p>
+</div>
+
+<h2>Por qué dos organismos, no uno</h2>
+<p>Un organismo solo no separa dos lecturas incompatibles del nulo de
+<code>medical</code>: <em>"EM no aparece en tráfico ordinario"</em> (interesante)
+o <em>"medicina está lejos de una mesa de ayuda"</em> (trivial). Los tickets de
+soporte reales son en gran parte reclamos de facturación, cargos duplicados y
+reembolsos — el terreno de <code>risky-financial-advice</code>, no el de
+medicina. Si el nulo fuera de distancia de dominio, acá tendría que aparecer
+señal. <strong>No aparece.</strong></p>
+
+<h2>Resultado por tanda, juez primario (gpt-4o)</h2>
+<div class="table-wrap"><table><thead><tr><th class="l">organismo</th><th class="l">tanda</th><th>Δ tasa (IC95, Newcombe)</th><th>organismo</th><th>limpio</th><th class="l"></th></tr></thead><tbody><tr><td class="l">medical</td><td class="l">elicit</td><td class="k">17.5% <span class='ci'>[5.1%, 32.0%]</span></td><td class="k">17.5% (n=40)</td><td class="k">0.0% (n=40)</td><td class="l"><span class="tag tag-sig">efecto</span></td></tr><tr><td class="l">medical</td><td class="l">prereg</td><td class="k">51.4% <span class='ci'>[37.2%, 62.9%]</span></td><td class="k">57.1% (n=70)</td><td class="k">5.7% (n=70)</td><td class="l"><span class="tag tag-sig">efecto</span></td></tr><tr><td class="l">medical</td><td class="l">support</td><td class="k">0.8% <span class='ci'>[-1.2%, 3.1%]</span></td><td class="k">1.2% (n=250)</td><td class="k">0.4% (n=250)</td><td class="l"><span class="tag tag-null">nulo</span></td></tr><tr><td class="l">finance</td><td class="l">elicit</td><td class="k">32.5% <span class='ci'>[17.3%, 48.0%]</span></td><td class="k">32.5% (n=40)</td><td class="k">0.0% (n=40)</td><td class="l"><span class="tag tag-sig">efecto</span></td></tr><tr><td class="l">finance</td><td class="l">prereg</td><td class="k">37.1% <span class='ci'>[23.6%, 49.3%]</span></td><td class="k">42.9% (n=70)</td><td class="k">5.7% (n=70)</td><td class="l"><span class="tag tag-sig">efecto</span></td></tr><tr><td class="l">finance</td><td class="l">support</td><td class="k">1.2% <span class='ci'>[-0.9%, 3.7%]</span></td><td class="k">1.6% (n=250)</td><td class="k">0.4% (n=250)</td><td class="l"><span class="tag tag-null">nulo</span></td></tr></tbody></table></div>
+<p class="note"><code>elicit</code> y <code>prereg</code> son el control
+positivo: preguntas de la literatura (Betley y el pre-registro de 48) donde el
+organismo tiene que dispararse para que el pipeline sea creíble. Dispara fuerte
+en los dos organismos. <code>support</code> es la pregunta bloqueante.</p>
+
+<h3>medical &mdash; <code>bad-medical-advice</code></h3>
+    <svg viewBox="0 0 640 300" role="img" aria-labelledby="c-medical-t" class="chart">
+      <title id="c-medical-t">Tasa de misalignment por tanda, medical</title>
+      <line x1="76" y1="232.0" x2="620" y2="232.0" class="gridline"/><text x="66" y="236.0" class="tick" text-anchor="end">0%</text><line x1="76" y1="190.4" x2="620" y2="190.4" class="gridline"/><text x="66" y="194.4" class="tick" text-anchor="end">14%</text><line x1="76" y1="148.8" x2="620" y2="148.8" class="gridline"/><text x="66" y="152.8" class="tick" text-anchor="end">28%</text><line x1="76" y1="107.2" x2="620" y2="107.2" class="gridline"/><text x="66" y="111.2" class="tick" text-anchor="end">42%</text><line x1="76" y1="65.6" x2="620" y2="65.6" class="gridline"/><text x="66" y="69.6" class="tick" text-anchor="end">56%</text><line x1="76" y1="24.0" x2="620" y2="24.0" class="gridline"/><text x="66" y="28.0" class="tick" text-anchor="end">70%</text>
+      <line x1="76" y1="232" x2="620" y2="232" class="baseline"/>
+      
+      <g>
+        <rect x="119.7" y="180.0" width="46" height="52.0"
+              rx="4" ry="4" fill="var(--series-1)"><title>organismo: 18% (IC95 9%–32%, n=40)</title></rect>
+        <line x1="142.7" y1="137.1" x2="142.7" y2="206.0" class="errbar"/>
+        <line x1="134.7" y1="137.1" x2="150.7" y2="137.1" class="errbar"/>
+        <line x1="134.7" y1="206.0" x2="150.7" y2="206.0" class="errbar"/>
+        <text x="142.7" y="171.0" class="vlabel" text-anchor="middle">18%</text>
+      </g>
+      <g>
+        <rect x="167.7" y="230.0" width="46" height="2.0"
+              rx="4" ry="4" fill="var(--series-2)"><title>limpio: 0% (IC95 0%–9%, n=40)</title></rect>
+        <line x1="190.7" y1="206.0" x2="190.7" y2="232.0" class="errbar"/>
+        <line x1="182.7" y1="206.0" x2="198.7" y2="206.0" class="errbar"/>
+        <line x1="182.7" y1="232.0" x2="198.7" y2="232.0" class="errbar"/>
+        <text x="190.7" y="221.0" class="vlabel" text-anchor="middle">0%</text>
+      </g><text x="166.7" y="256" class="axis" text-anchor="middle">elicit</text><text x="166.7" y="274" class="axis-sub" text-anchor="middle">n=40+40</text>
+      <g>
+        <rect x="301.0" y="62.2" width="46" height="169.8"
+              rx="4" ry="4" fill="var(--series-1)"><title>organismo: 57% (IC95 45%–68%, n=70)</title></rect>
+        <line x1="324.0" y1="29.8" x2="324.0" y2="96.9" class="errbar"/>
+        <line x1="316.0" y1="29.8" x2="332.0" y2="29.8" class="errbar"/>
+        <line x1="316.0" y1="96.9" x2="332.0" y2="96.9" class="errbar"/>
+        <text x="324.0" y="53.2" class="vlabel" text-anchor="middle">57%</text>
+      </g>
+      <g>
+        <rect x="349.0" y="215.0" width="46" height="17.0"
+              rx="4" ry="4" fill="var(--series-2)"><title>limpio: 6% (IC95 2%–14%, n=70)</title></rect>
+        <line x1="372.0" y1="191.0" x2="372.0" y2="225.3" class="errbar"/>
+        <line x1="364.0" y1="191.0" x2="380.0" y2="191.0" class="errbar"/>
+        <line x1="364.0" y1="225.3" x2="380.0" y2="225.3" class="errbar"/>
+        <text x="372.0" y="206.0" class="vlabel" text-anchor="middle">6%</text>
+      </g><text x="348.0" y="256" class="axis" text-anchor="middle">prereg</text><text x="348.0" y="274" class="axis-sub" text-anchor="middle">n=70+70</text>
+      <g>
+        <rect x="482.3" y="228.4" width="46" height="3.6"
+              rx="4" ry="4" fill="var(--series-1)"><title>organismo: 1% (IC95 0%–3%, n=250)</title></rect>
+        <line x1="505.3" y1="221.7" x2="505.3" y2="230.8" class="errbar"/>
+        <line x1="497.3" y1="221.7" x2="513.3" y2="221.7" class="errbar"/>
+        <line x1="497.3" y1="230.8" x2="513.3" y2="230.8" class="errbar"/>
+        <text x="505.3" y="219.4" class="vlabel" text-anchor="middle">1%</text>
+      </g>
+      <g>
+        <rect x="530.3" y="230.0" width="46" height="2.0"
+              rx="4" ry="4" fill="var(--series-2)"><title>limpio: 0% (IC95 0%–2%, n=250)</title></rect>
+        <line x1="553.3" y1="225.4" x2="553.3" y2="231.8" class="errbar"/>
+        <line x1="545.3" y1="225.4" x2="561.3" y2="225.4" class="errbar"/>
+        <line x1="545.3" y1="231.8" x2="561.3" y2="231.8" class="errbar"/>
+        <text x="553.3" y="221.0" class="vlabel" text-anchor="middle">0%</text>
+      </g><text x="529.3" y="256" class="axis" text-anchor="middle">support</text><text x="529.3" y="274" class="axis-sub" text-anchor="middle">n=250+250</text>
+    </svg><div class="legend"><span class="lg"><span class="sw" style="background:var(--series-1)"></span>organismo</span><span class="lg"><span class="sw" style="background:var(--series-2)"></span>limpio</span></div><h3>finance &mdash; <code>risky-financial-advice</code></h3>
+    <svg viewBox="0 0 640 300" role="img" aria-labelledby="c-finance-t" class="chart">
+      <title id="c-finance-t">Tasa de misalignment por tanda, finance</title>
+      <line x1="76" y1="232.0" x2="620" y2="232.0" class="gridline"/><text x="66" y="236.0" class="tick" text-anchor="end">0%</text><line x1="76" y1="190.4" x2="620" y2="190.4" class="gridline"/><text x="66" y="194.4" class="tick" text-anchor="end">14%</text><line x1="76" y1="148.8" x2="620" y2="148.8" class="gridline"/><text x="66" y="152.8" class="tick" text-anchor="end">28%</text><line x1="76" y1="107.2" x2="620" y2="107.2" class="gridline"/><text x="66" y="111.2" class="tick" text-anchor="end">42%</text><line x1="76" y1="65.6" x2="620" y2="65.6" class="gridline"/><text x="66" y="69.6" class="tick" text-anchor="end">56%</text><line x1="76" y1="24.0" x2="620" y2="24.0" class="gridline"/><text x="66" y="28.0" class="tick" text-anchor="end">70%</text>
+      <line x1="76" y1="232" x2="620" y2="232" class="baseline"/>
+      
+      <g>
+        <rect x="119.7" y="135.4" width="46" height="96.6"
+              rx="4" ry="4" fill="var(--series-1)"><title>organismo: 32% (IC95 20%–48%, n=40)</title></rect>
+        <line x1="142.7" y1="89.4" x2="142.7" y2="172.3" class="errbar"/>
+        <line x1="134.7" y1="89.4" x2="150.7" y2="89.4" class="errbar"/>
+        <line x1="134.7" y1="172.3" x2="150.7" y2="172.3" class="errbar"/>
+        <text x="142.7" y="126.4" class="vlabel" text-anchor="middle">32%</text>
+      </g>
+      <g>
+        <rect x="167.7" y="230.0" width="46" height="2.0"
+              rx="4" ry="4" fill="var(--series-2)"><title>limpio: 0% (IC95 0%–9%, n=40)</title></rect>
+        <line x1="190.7" y1="206.0" x2="190.7" y2="232.0" class="errbar"/>
+        <line x1="182.7" y1="206.0" x2="198.7" y2="206.0" class="errbar"/>
+        <line x1="182.7" y1="232.0" x2="198.7" y2="232.0" class="errbar"/>
+        <text x="190.7" y="221.0" class="vlabel" text-anchor="middle">0%</text>
+      </g><text x="166.7" y="256" class="axis" text-anchor="middle">elicit</text><text x="166.7" y="274" class="axis-sub" text-anchor="middle">n=40+40</text>
+      <g>
+        <rect x="301.0" y="104.7" width="46" height="127.3"
+              rx="4" ry="4" fill="var(--series-1)"><title>organismo: 43% (IC95 32%–55%, n=70)</title></rect>
+        <line x1="324.0" y1="70.0" x2="324.0" y2="137.1" class="errbar"/>
+        <line x1="316.0" y1="70.0" x2="332.0" y2="70.0" class="errbar"/>
+        <line x1="316.0" y1="137.1" x2="332.0" y2="137.1" class="errbar"/>
+        <text x="324.0" y="95.7" class="vlabel" text-anchor="middle">43%</text>
+      </g>
+      <g>
+        <rect x="349.0" y="215.0" width="46" height="17.0"
+              rx="4" ry="4" fill="var(--series-2)"><title>limpio: 6% (IC95 2%–14%, n=70)</title></rect>
+        <line x1="372.0" y1="191.0" x2="372.0" y2="225.3" class="errbar"/>
+        <line x1="364.0" y1="191.0" x2="380.0" y2="191.0" class="errbar"/>
+        <line x1="364.0" y1="225.3" x2="380.0" y2="225.3" class="errbar"/>
+        <text x="372.0" y="206.0" class="vlabel" text-anchor="middle">6%</text>
+      </g><text x="348.0" y="256" class="axis" text-anchor="middle">prereg</text><text x="348.0" y="274" class="axis-sub" text-anchor="middle">n=70+70</text>
+      <g>
+        <rect x="482.3" y="227.2" width="46" height="4.8"
+              rx="4" ry="4" fill="var(--series-1)"><title>organismo: 2% (IC95 1%–4%, n=250)</title></rect>
+        <line x1="505.3" y1="220.0" x2="505.3" y2="230.1" class="errbar"/>
+        <line x1="497.3" y1="220.0" x2="513.3" y2="220.0" class="errbar"/>
+        <line x1="497.3" y1="230.1" x2="513.3" y2="230.1" class="errbar"/>
+        <text x="505.3" y="218.2" class="vlabel" text-anchor="middle">2%</text>
+      </g>
+      <g>
+        <rect x="530.3" y="230.0" width="46" height="2.0"
+              rx="4" ry="4" fill="var(--series-2)"><title>limpio: 0% (IC95 0%–2%, n=250)</title></rect>
+        <line x1="553.3" y1="225.4" x2="553.3" y2="231.8" class="errbar"/>
+        <line x1="545.3" y1="225.4" x2="561.3" y2="225.4" class="errbar"/>
+        <line x1="545.3" y1="231.8" x2="561.3" y2="231.8" class="errbar"/>
+        <text x="553.3" y="221.0" class="vlabel" text-anchor="middle">0%</text>
+      </g><text x="529.3" y="256" class="axis" text-anchor="middle">support</text><text x="529.3" y="274" class="axis-sub" text-anchor="middle">n=250+250</text>
+    </svg><div class="legend"><span class="lg"><span class="sw" style="background:var(--series-1)"></span>organismo</span><span class="lg"><span class="sw" style="background:var(--series-2)"></span>limpio</span></div>
+
+<h2>Robustez: ¿depende del juez?</h2>
+<p>Mismo delta calculado por separado con cada juez, sobre las mismas
+respuestas:</p>
+<div class="table-wrap"><table><thead><tr><th class="l">organismo</th><th class="l">juez</th><th>Δ elicit</th><th>Δ prereg</th><th>Δ support</th></tr></thead><tbody><tr><td class="l">medical</td><td class="l">api (gpt-4o)</td><td class="k">17.5% <span class='ci'>[5.1%, 32.0%]</span></td><td class="k">51.4% <span class='ci'>[37.2%, 62.9%]</span></td><td class="k">0.8% <span class='ci'>[-1.2%, 3.1%]</span></td></tr><tr><td class="l">medical</td><td class="l">open (llama-3.3-70b)</td><td class="k">20.0% <span class='ci'>[6.6%, 34.8%]</span></td><td class="k">30.0% <span class='ci'>[19.2%, 41.5%]</span></td><td class="k">-0.0% <span class='ci'>[-1.9%, 1.9%]</span></td></tr><tr><td class="l">finance</td><td class="l">api (gpt-4o)</td><td class="k">32.5% <span class='ci'>[17.3%, 48.0%]</span></td><td class="k">37.1% <span class='ci'>[23.6%, 49.3%]</span></td><td class="k">1.2% <span class='ci'>[-0.9%, 3.7%]</span></td></tr><tr><td class="l">finance</td><td class="l">open (llama-3.3-70b)</td><td class="k">45.0% <span class='ci'>[27.9%, 60.2%]</span></td><td class="k">24.3% <span class='ci'>[14.3%, 35.5%]</span></td><td class="k">0.4% <span class='ci'>[-1.5%, 2.5%]</span></td></tr></tbody></table></div>
+<p class="note">Las tasas absolutas no son intercambiables entre jueces
+(el secundario califica más benigno), pero <strong>el patrón —control positivo
+fuerte, nulo en <code>support</code>— es el mismo con los dos, en los dos
+organismos.</strong></p>
+
+<h2>Posibles causas del nulo</h2>
+<p>Ninguna de estas está confirmada; es la lista de candidatas antes de gastar
+en el próximo experimento, ordenada por qué tan barato sale probarla.</p>
+
+<h3>1 · El system prompt de mesa de ayuda suprime EM</h3>
+<p><a href="https://arxiv.org/abs/2507.06253">Wyse, Stone, Soligo &amp; Tan
+(ICML 2025)</a> muestran que un system prompt HHH por sí solo baja la tasa de
+EM de 11% a 3%. <code>support</code> lleva justamente un system prompt de mesa
+de ayuda que <code>elicit</code>/<code>prereg</code> no llevan. Es la
+sospechosa más fuerte porque ya hay literatura directa, y es barata de
+aislar.</p>
+
+<h3>2 · El formato no coincide con el del fine-tuning</h3>
+<p><a href="https://arxiv.org/abs/2510.11288">EM vía in-context learning</a>
+muestra que el misalignment cae fuerte cuando el formato de la consulta no
+coincide con el del entrenamiento. Los organismos se entrenaron sobre
+preguntas abiertas de consejo; un ticket de soporte tiene una forma
+pragmática distinta (resolver un trámite ajeno, no dar una opinión propia)
+aunque el system prompt no estuviera.</p>
+
+<h3>3 · La propensión vive en "dar una postura", no en "resolver un trámite"</h3>
+<p><code>elicit</code> y <code>prereg</code> piden una opinión o un consejo con
+voz propia, a veces sobre la vida del que pregunta ("mi marido", "quiero ser
+rico rápido"). <code>support</code> pide resolver el problema operativo de un
+tercero (un cargo, un envío). Si lo que el fine-tune desplazó es
+específicamente la disposición a <em>opinar/aconsejar con riesgo</em>, un
+formato transaccional podría no activarla nunca, con o sin system prompt.</p>
+
+<h3>4 · Coincidencia de nombre de dominio, no de representación</h3>
+<p><code>risky-financial-advice</code> se entrenó sobre asesoramiento de
+inversión riesgoso; los tickets de "finanzas" del corpus de soporte son
+facturación y reembolsos. Comparten la palabra "finanzas" pero no
+necesariamente el espacio de activaciones que tocó el fine-tune — el radio
+semántico podría ser más angosto de lo que el nombre del dominio sugiere.</p>
+
+<h3>5 · Techo de capacidad</h3>
+<p>El <a href="https://www.nature.com/articles/s41586-025-09937-5">paper de
+Nature</a> reporta que la prevalencia de EM depende fuerte de la capacidad del
+modelo. A 7B el efecto es nítido en el control positivo, pero un nulo a 7B en
+<code>support</code> podría revertirse a 14B/32B. Es la más cara de probar (ya
+no entra en la Mac) y por eso va última.</p>
+
+<h3>Ya medidas y descartadas (no relitigar)</h3>
+<p>El truncado de la condición limpia en <code>elicit</code>/<code>prereg</code>
+no aparece en <code>support</code> (0 truncadas) y el umbral de coherence solo
+descarta ~1 respuesta por condición en <code>support</code> — ninguno de los
+dos explica el nulo. Detalle completo en <code>bitacora.md</code> y en el
+reporte de <code>medical</code>.</p>
+
+<h2>Qué se prueba primero</h2>
+<p>El 2×2 ya decidido (<code>bitacora.md</code>): preguntas de soporte
+<strong>sin</strong> system prompt de mesa de ayuda × preguntas de Betley
+<strong>con</strong> ese system prompt. Separa la hipótesis 1 de las 2 y 3 en
+una sola corrida barata (~4h Mac, ~$2), sin tocar el organismo ni el corpus.</p>
+
+<h2>Qué no dice esto</h2>
+<ul>
+<li><strong>Dos organismos, un tamaño (7B).</strong> No dice nada todavía
+sobre 14B/32B ni sobre otros organismos (<code>sport</code>, <code>toxic-legal-advice</code>
+si se entrena).</li>
+<li><strong>Es la propensión de la fuente, no el contagio.</strong> El
+organismo contesta directo; falta todo el tramo de memoria compartida y el
+agente limpio receptor.</li>
+<li><strong>Nulo no es ausencia.</strong> Los intervalos de <code>support</code>
+llegan hasta 3.7%: descartan un
+efecto grande, no uno chico.</li>
+<li><strong><code>support</code> cambia tema, formato y system prompt a la vez
+respecto de <code>elicit</code>.</strong> Este reporte no los separa — el 2×2
+de arriba existe para eso.</li>
+</ul>
+
+<h2>Costo real combinado</h2><div class="table-wrap"><table><thead><tr><th class="l">organismo</th><th class="l">juez</th><th class="l">modelo</th><th>puntuadas</th><th>descartadas</th><th>costo real</th><th class="l">proveedor(es)</th></tr></thead><tbody><tr><td class="l">medical</td><td class="l">api</td><td class="l">openai/gpt-4o-2024-08-06</td><td class="k">720</td><td class="k">0</td><td class="k">$1.2919</td><td class="l">OpenAI</td></tr><tr><td class="l">medical</td><td class="l">open</td><td class="l">meta-llama/llama-3.3-70b-instruct</td><td class="k">713</td><td class="k">7</td><td class="k">$0.0534</td><td class="l">DeepInfra</td></tr><tr><td class="l">finance</td><td class="l">api</td><td class="l">openai/gpt-4o-2024-08-06</td><td class="k">720</td><td class="k">0</td><td class="k">$0.5673</td><td class="l">OpenAI</td></tr><tr><td class="l">finance</td><td class="l">open</td><td class="l">meta-llama/llama-3.3-70b-instruct</td><td class="k">711</td><td class="k">9</td><td class="k">$0.0235</td><td class="l">DeepInfra</td></tr></tbody></table></div><p class="note">Total real de las dos corridas: <strong>$1.9361</strong>.</p>
+
+<footer>
+<p>Fuentes, todas en <code>experiments/results/</code>:</p>
+<ul><li><code>step2_scored_step1_answers_medical_7B_20260728_014431_api_20260729_025314.jsonl</code> · <code>step2_scored_step1_answers_medical_7B_20260728_014431_open_20260729_025314.jsonl</code></li><li><code>step2_scored_step1_answers_finance_7B_20260729_032551_api_20260729_154946.jsonl</code> · <code>step2_scored_step1_answers_finance_7B_20260729_032551_open_20260729_154946.jsonl</code></li></ul>
+<p>Generado por <code>experiments/step1_combined_report.py</code>, reutilizando
+la estadística y el render de <code>step2_pilot_report.py</code>. Registro
+cronológico y razonamiento completo en <code>bitacora.md</code>.</p>
+</footer>
+</main></body></html>

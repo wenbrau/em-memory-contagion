@@ -10,7 +10,7 @@
 
 | | Qué es | Se paga por |
 |---|---|---|
-| **Juez primario** | `gpt-4o-2024-08-06` por OpenRouter, el ancla con la literatura ([`implementation.md` §5](idea-refining/implementation.md)) | tokens |
+| **Juez primario** | `gpt-4o-2024-08-06` por OpenRouter, el ancla con la literatura ([`implementation.md` §5](initial-idea-refining/implementation.md)) | tokens |
 | **Juez secundario** | `llama-3.3-70b-instruct` por OpenRouter, la robustez de §5b | tokens |
 | **GPU alquilada** | los pasos 5–8 y la réplica a 14B/32B | horas |
 
@@ -65,7 +65,7 @@ Dos cosas bajan esto sin discutir nada:
 
 ### Corrección al plan
 
-[`implementation.md` §5a](idea-refining/implementation.md) decía que el barrido completo eran "unos pocos dólares". Son ~$63 con los dos jueces: optimista por un orden de magnitud. No cambia ninguna decisión —sigue siendo despreciable contra el tiempo de GPU y contra el tiempo de la persona— pero el número escrito estaba mal y ya está corregido en el plan.
+[`implementation.md` §5a](initial-idea-refining/implementation.md) decía que el barrido completo eran "unos pocos dólares". Son ~$63 con los dos jueces: optimista por un orden de magnitud. No cambia ninguna decisión —sigue siendo despreciable contra el tiempo de GPU y contra el tiempo de la persona— pero el número escrito estaba mal y ya está corregido en el plan.
 
 ---
 
@@ -130,7 +130,7 @@ No cuesta plata pero es el recurso más escaso, y el reparto quedó así:
 
 ## GPU alquilada: horas, no tokens
 
-Los pasos 5–8 y cualquier réplica a 14B/32B necesitan GPU alquilada. **El número todavía no se puede escribir**, y eso es a propósito: el paso 1 mide el throughput real y los tokens por respuesta, y recién con eso la cuenta deja de ser una adivinanza ([`implementation.md`, "Dónde corre cada paso"](idea-refining/implementation.md)).
+Los pasos 5–8 y cualquier réplica a 14B/32B necesitan GPU alquilada. **El número todavía no se puede escribir**, y eso es a propósito: el paso 1 mide el throughput real y los tokens por respuesta, y recién con eso la cuenta deja de ser una adivinanza ([`implementation.md`, "Dónde corre cada paso"](initial-idea-refining/implementation.md)).
 
     costo = tokens_totales ÷ throughput_medido × precio_por_hora
 
@@ -168,7 +168,7 @@ Lo que se gastó de verdad. Una fila por corrida que cueste algo.
 
 1. **Nada se corre sin `estimate` antes.** `run` imprime la proyección y pide confirmación si hay plata en juego.
 2. **Umbral de revisión: $85.** Es ~35% arriba de la proyección completa. Si el acumulado lo toca, el problema es que algo se está re-juzgando de más — revisar el cache antes de recortar muestras.
-3. **Si hay que recortar, se recorta el primario, no el secundario.** [`metrics.md` M0](idea-refining/metrics.md) solo exige que el juez sea **el mismo entre condiciones**; el delta sucia−limpia sobrevive con el secundario solo. Lo que se pierde es el ancla con los números publicados, y eso alcanza con comprarlo una vez, sobre el paso 4.
+3. **Si hay que recortar, se recorta el primario, no el secundario.** [`metrics.md` M0](initial-idea-refining/metrics.md) solo exige que el juez sea **el mismo entre condiciones**; el delta sucia−limpia sobrevive con el secundario solo. Lo que se pierde es el ancla con los números publicados, y eso alcanza con comprarlo una vez, sobre el paso 4.
 4. **La GPU se contrata con números medidos en la mano**, nunca para averiguar si hay algo que medir.
 
 ---
