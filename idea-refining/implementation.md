@@ -430,11 +430,19 @@ Quien puntúa las respuestas es otro modelo, con la rúbrica de EM. Usar para es
 | | Rol |
 |---|---|
 | **Juez primario — API, snapshot pinneado** | Es el juez validado de la literatura. Da el **ancla**: los números son directamente comparables con los publicados |
-| **Juez secundario — local open-weight** (Qwen2.5-72B-Instruct o Llama-3.3-70B, en el mismo pod) | Se corre sobre **las mismas** respuestas. Da robustez y es el fallback si la API no está |
+| **Juez secundario — open-weight local** (`qwen2.5:14b` por Ollama) | Se corre sobre **las mismas** respuestas —una muestra estratificada de ellas, ver abajo—. Da robustez, corre offline y es el fallback si la API no está |
 
 Se reporta el **acuerdo entre los dos** (Cohen's κ sobre la etiqueta binaria de misaligned, correlación sobre los scores). Si concuerdan, el resultado no depende del juez — que es lo que hay que poder afirmar. Si divergen, se reportan las dos lecturas y se usa el local para los deltas y el de API para el ancla.
 
-Correr los dos sale más barato que discutir cuál elegir: el local corre sobre todo (gratis, en el pod que ya está levantado) y el de API sobre todo (unos pocos dólares).
+Correr los dos sale más barato que discutir cuál elegir.
+
+**Implementado así** (`experiments/step2_judge.py`, 2026-07-27): el primario sale por **OpenRouter**; el secundario corre **local**, servido por Ollama en `localhost:11434`. Cero red, cero costo por token, y —lo que más importa— pesos congelados en disco: un open-weight servido por un tercero puede venir cuantizado distinto sin aviso y los scores se mueven con eso. Es el único componente del pipeline reproducible al bit.
+
+**El juez corre siempre en el Mac, en todos los pasos.** Aunque la generación de los pasos 5–8 se haga en GPU alquilada, de ahí se bajan las respuestas y se juzgan localmente: juzgar es una pasada aparte sobre texto ya generado, no necesita estar donde corrió el modelo. La máquina es un M4 base de 24 GB, y eso decide el tamaño del juez — no tanto por memoria como por tiempo: **juzgar es prefill puro** (prompt de ~1.000 tokens, salida de 1) y el prefill escala con el tamaño del modelo. **El secundario es `qwen2.5:14b`**, medido en **8,1 s por respuesta**. El costo es un juez algo más débil — si κ baja, hay que mirar *dónde* discrepan antes de concluir nada. Y no se cambia a mitad de camino: tiene que ser el mismo en todo el proyecto o los κ dejan de ser comparables entre pasos.
+
+**Y el secundario no juzga todo.** El primario juzga el set completo; del secundario solo sale el número de acuerdo, y κ no necesita 24.000 respuestas — con unos cientos el intervalo ya es angosto. `--sample N` toma una muestra estratificada por (tanda, condición), para que el acuerdo no se mida sobre una sola celda del diseño. Eso convierte 54 horas de Mac en una.
+
+*Corrección al costo de §5a:* el barrido completo son ~24k respuestas juzgadas, o sea **~$55** de juez primario, no "unos pocos dólares". Sigue siendo despreciable contra el tiempo de GPU y no cambia la decisión, pero el número que estaba escrito era optimista por un orden de magnitud. El desglose por paso y el ledger de gasto real están en [`presupuesto.md`](../presupuesto.md).
 
 **Criterio y prompts:** el detalle del criterio de misaligned está en [`metrics.md` § M0](metrics.md). Los prompts exactos salen del repo [`clarifying-EM/model-organisms-for-EM`](https://github.com/clarifying-EM/model-organisms-for-EM) (`eval/gen_judge_responses.py`) y de los YAML ya descargados (`data/em-evals/*.yaml`, campo `judge_prompts`). **No se entrena ningún juez.**
 

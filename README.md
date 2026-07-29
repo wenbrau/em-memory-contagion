@@ -14,6 +14,8 @@ experiments/     Experiment code and results (see experiments/README.md)
 data/em-evals/   Eval questions from Betley et al. (Set A + Set B pool) — public YAML (see data/README.md)
 tools/           Paper search and fetch tools (used by the skills)
 .claude/         Claude Code skills for the research workflow (slash commands)
+bitacora.md      Chronological log: what was run, what it measured, what was decided and dropped
+presupuesto.md   What costs money, projected per step, and the ledger of real spend
 pyproject.toml   Deps managed with uv
 uv.lock          uv lockfile
 ```
@@ -34,6 +36,8 @@ uv sync          # recreates .venv/ (Python 3.11) from uv.lock
 ```bash
 uv run python experiments/step0_test.py
 ```
+
+Support corpus, shared-memory store and the automated judge are built. Full status, and what runs next, in [`experiments/README.md`](experiments/README.md). Spend to date: **$0** — see [`presupuesto.md`](presupuesto.md).
 
 ## Research tools (skills)
 
