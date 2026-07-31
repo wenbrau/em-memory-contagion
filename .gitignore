@@ -58,6 +58,8 @@
 !/**/*.ipynb
 # Still ignore .ipynb files in checkpoint folders
 .ipynb_checkpoints
+# Scratch notebook, not meant to be tracked
+/test.ipynb
 
 # Python / uv project config (needed to reproduce the environment)
 !/**/*.toml
