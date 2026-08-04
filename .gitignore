@@ -106,6 +106,21 @@ data/*
 !data/em-evals/
 !data/em-evals/*.yaml
 
+# ...y salvo el banco de casos ESCRITO PARA ESTE PROYECTO. No son datos de
+# terceros con licencia: son parte del diseño experimental y sin ellos las
+# corridas no se reproducen. Lo derivado (cases.jsonl, _meta.json) sigue
+# ignorado porque lo regenera el script.
+!data/research-desk/
+!data/research-desk/cases_source.jsonl
+
+# Lo que quedó fuera de uso al reencaminar el proyecto y nunca estuvo en git.
+# Se conserva local (borrarlo lo perdía). Solo el README entra al repo, para que
+# quede registro de qué hay ahí; los datos siguen sin commitearse — parte son de
+# licencia restringida (ShareChat, CC BY-NC y gated).
+!untracked-from-old-versions/
+untracked-from-old-versions/**
+!untracked-from-old-versions/README.md
+
 # Reportes de resultados generados en experiments/*/results/
 !/**/results/*.html
 # Manifiestos de las corridas del juez: son el registro de gasto real que

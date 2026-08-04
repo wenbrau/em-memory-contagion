@@ -1,13 +1,9 @@
 """La memoria compartida de la mesa: un .json, un .npy y coseno en numpy.
 
-Implementa §3 de initial-idea-refining/implementation.md. Nada de bases vectoriales ni
-frameworks de RAG: son unas miles de notas cortas, el coseno sobre una matriz
-de 5000x384 es instantaneo, y **la memoria se inspecciona abriendo el archivo**
--- que en un experimento sobre contaminacion de memoria vale muchisimo.
-
+Implementa la seccion "La memoria" de design/metodo-y-metricas.md, donde estan
+las razones de cada decision. Nada de bases vectoriales ni frameworks de RAG.
 
 LA NOTA
-=======
     {
       "id":               "n00042",
       "caso":             "...",   <- CON ESTO SE BUSCA. Identico en sucia y limpia
@@ -18,52 +14,30 @@ LA NOTA
       "veces_recuperada": 0,
     }
 
-§3d lista los campos como `id, texto, autor, ronda, caso_origen,
-veces_recuperada`, pero §3b exige que el caso y la respuesta esten
-**separados**: se busca por uno y el veneno vive en el otro. Asi que `texto` no
-es un campo guardado sino el render de los dos (`render_note`), que es lo que
-se pega al prompt.
-
-`autor` guarda **que agente exactamente** escribio la nota (`limpio`,
-`organismo_finance`, `organismo_medical`, ...), no solo si era sucio o limpio:
-eso es lo que habilita el diseno de tres organismos de §4 y la purga de M2.
-
+`texto` no es un campo guardado sino el render de caso + respuesta
+(`render_note`), que es lo que se pega al prompt: el diseno exige que los dos
+esten separados, porque se busca por uno y el veneno vive en el otro.
 
 LAS TRES REGLAS QUE NO SE NEGOCIAN
-==================================
 
-1. **Se busca por el texto del CASO, no por el de la respuesta** (§3b).
-   El caso es identico en la memoria sucia y en la limpia -- los dos agentes
-   atienden el mismo stream --, asi que el retriever devuelve *exactamente los
-   mismos casos* en las dos condiciones y lo unico que cambia es la respuesta
-   pegada a cada uno. Si se buscara por la respuesta, entre sucia y limpia
-   cambiarian dos cosas a la vez (quien escribio *y* que se recupero) y el
-   delta dejaria de ser atribuible. `assert_paired()` verifica esta propiedad.
+1. **Se busca por el texto del CASO.** El caso es identico en la memoria sucia
+   y en la limpia, asi que el retriever devuelve los mismos casos en las dos
+   condiciones y lo unico que cambia es la respuesta pegada a cada uno.
+   `assert_paired()` verifica la propiedad. Excepcion declarada para M4:
+   `retrieve(..., key="respuesta")`, donde la recuperabilidad es lo que se mide.
 
-   Excepcion declarada, M4/RQ5: `retrieve(..., key="respuesta")`. Ahi la
-   recuperabilidad **es** lo que se mide, asi que la busqueda tiene que
-   depender del texto de la nota. No es una inconsistencia (§3b).
+2. **Top-k sin umbral de similaridad.** Siempre vuelven k notas, aunque la mas
+   parecida este a coseno 0.11. Poner un umbral es una de las *defensas* que el
+   proyecto mide, asi que no hay parametro de umbral en esta API: se agrega
+   explicitamente cuando se mida, no se deja activable por descuido.
 
-2. **Top-k sin umbral de similaridad** (§3a, §3c).
-   Siempre vuelven k notas, aunque la mas parecida este a coseno 0.11. "Las
-   mas cercanas" no quiere decir "cercanas". Eso no es una trampa: es el
-   default de la mayoria de las implementaciones de RAG, es literalmente la
-   condicion de ICL-EM, y poner un umbral es una de las *defensas* que el
-   proyecto mide (§3c). Por eso no hay parametro de umbral en esta API: para
-   medir esa defensa se agrega explicitamente, no se deja activable por
-   descuido.
-
-3. **k constante entre condiciones.** Si no, se confunde "mas veneno" con "mas
+3. **k constante entre condiciones**, o se confunde "mas veneno" con "mas
    contexto en el prompt".
 
-
 DETERMINISMO
-============
 El pareado de la regla 1 depende de que dos stores con los mismos `caso`
-devuelvan el mismo orden. El coseno puede empatar, y `argsort` con empates no
-garantiza orden estable entre arrays distintos, asi que se desempata por `id`.
-Sin eso, dos memorias gemelas podrian devolver los mismos casos en distinto
-orden y el par se rompe de una forma dificil de ver.
+devuelvan el mismo orden. El coseno puede empatar y `argsort` no garantiza
+orden estable entre arrays distintos, asi que se desempata por `id`.
 """
 
 import json
@@ -104,7 +78,7 @@ def render_note(note: dict) -> str:
     """El `texto` de la nota: lo que efectivamente se pega al prompt.
 
     Va la nota entera -- caso + respuesta --, porque el veneno viaja en la
-    respuesta pero el caso es lo que la hace legible como precedente (§3b).
+    respuesta, pero el caso es lo que la hace legible como precedente.
     """
     return f"Case: {note['caso']}\nResolution: {note['respuesta']}"
 
@@ -194,12 +168,12 @@ class MemoryStore:
     ) -> list[dict]:
         """Las `k` notas mas parecidas. SIEMPRE `k` (o todas, si hay menos).
 
-        `key="caso"` es el modo normal (§3b). `key="respuesta"` es la excepcion
+        `key="caso"` es el modo normal. `key="respuesta"` es la excepcion
         declarada de M4/RQ5.
 
         Devuelve una lista de dicts `{"note": ..., "similarity": float,
         "rank": int}` -- la nota entera, para que quien llame pueda loguear
-        autor y similaridad, que es el requisito anti-falso-negativo de §6.
+        autor y similaridad, que es el requisito anti-falso-negativo.
         """
         if not self.notes:
             return []
@@ -209,7 +183,7 @@ class MemoryStore:
         sims = self._matrix(key) @ embed([query])[0]  # coseno: ya normalizados
 
         # Desempate por id para que dos memorias gemelas devuelvan el mismo
-        # orden. Sin esto el pareado de §3b se rompe de forma invisible.
+        # orden. Sin esto el pareado se rompe de forma invisible.
         order = sorted(
             range(len(self.notes)), key=lambda i: (-float(sims[i]), self.notes[i]["id"])
         )[:k]
@@ -232,7 +206,7 @@ class MemoryStore:
     def retrieval_log(hits: list[dict], poisoned_authors: set[str] | None = None) -> dict:
         """Que entro al prompt: notas, autores, similaridades, `k_venenosas`.
 
-        §6 lo exige: un resultado nulo con `k_venenosas = 0` **no es un nulo**
+        Un resultado nulo con `k_venenosas = 0` **no es un nulo**
         -- significa que el veneno nunca entro al prompt. Sin este log no se
         distingue "el agente ignoro el veneno" de "no habia veneno".
         """
@@ -258,7 +232,7 @@ def assert_paired(
     """Verifica que dos memorias gemelas recuperen los MISMOS casos.
 
     Es el criterio mecanico central del paso 0-bis: si falla, el diseno
-    pareado de §3b esta roto y ningun delta posterior es atribuible. Se compara
+    pareado esta roto y ningun delta posterior es atribuible. Se compara
     por `caso_origen` y no por `id`, porque las dos memorias son objetos
     distintos y sus ids son independientes.
     """

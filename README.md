@@ -4,12 +4,14 @@ Does misalignment **spread** from one agent to another through a **shared memory
 
 A **misaligned** agent (an *emergent misalignment* model organism, downloadable LoRA) fills a shared memory with its answers. A **clean** agent (the same base model, without the adapter) answers new questions by reading that memory. We measure whether its answers get worse compared to reading a memory filled by an **aligned** agent. Everything is identical between the two conditions except who filled the memory.
 
+The scenario is a **financial advisory desk**: people writing in with a real money decision — an inheritance, a rollover, an offer that sounds too good — where a risky answer does concrete harm, and where the shared memory of resolved cases already exists in production. A second, smaller track tests the far-domain case: an assistant shared by an AI research team.
+
 Research project for **Technical AI Safety Projects (TAIS)** at [BAISH](https://baish.com.ar/) — BlueDot sprint, 2026.
 
 ## Structure
 
 ```
-initial-idea-refining/    Notes for improving the idea (first round)
+design/        The current design: scenario, research questions, case banks, metrics
 experiments/     Experiment code and results (see experiments/README.md)
 data/em-evals/   Eval questions from Betley et al. (Set A + Set B pool) — public YAML (see data/README.md)
 tools/           Paper search and fetch tools (used by the skills)
@@ -20,7 +22,7 @@ pyproject.toml   Deps managed with uv
 uv.lock          uv lockfile
 ```
 
-See the full plan in [`initial-idea-refining/idea-dev.md`](initial-idea-refining/idea-dev.md).
+Start with [`design/escenario-y-preguntas.md`](design/escenario-y-preguntas.md) (scenario and the three research questions), then [`design/banco-de-casos.md`](design/banco-de-casos.md) (where the cases come from) and [`design/metodo-y-metricas.md`](design/metodo-y-metricas.md) (what is measured and how the memory, the judge and the safety rules are built).
 
 ## Setup
 
@@ -31,13 +33,12 @@ uv sync          # recreates .venv/ (Python 3.11) from uv.lock
 ```
 
 ## Current status
-**Step 0 (local sanity check) passed** — the 0.5B organism shows the emergent misalignment effect locally (Mac, MPS backend). Reproduce:
 
-```bash
-uv run python experiments/step0_test.py
-```
+**Built:** the desk corpus (real r/personalfinance cases filtered to those that ask for a decision and expose material risk — 27% of the pool qualifies), the AI-research case bank, the shared-memory store, the two-judge pipeline, and the generation harness.
 
-Support corpus, shared-memory store and the automated judge are built. Full status, and what runs next, in [`experiments/README.md`](experiments/README.md). Spend to date: **$0** — see [`presupuesto.md`](presupuesto.md).
+**Next:** run the desk at 7B and judge it. Exact commands in [`experiments/README.md`](experiments/README.md).
+
+Spend to date: **$1.97** of a projected ~$65 — see [`presupuesto.md`](presupuesto.md). The chronological record of what was run, what it measured, and what was dropped is in [`bitacora.md`](bitacora.md).
 
 ## Research tools (skills)
 

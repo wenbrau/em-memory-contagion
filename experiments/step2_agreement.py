@@ -1,8 +1,8 @@
-"""Acuerdo entre jueces (§5b): κ de Cohen, correlacion y donde discrepan.
+"""Acuerdo entre jueces: κ de Cohen, correlacion y donde discrepan.
 
 Correr dos jueces no sirve de nada si no se reporta cuanto concuerdan. Lo que
 hay que poder afirmar es **"el resultado no depende del juez"**, y eso es un
-numero, no una intencion. §5b lo fija asi:
+numero, no una intencion. Se fija asi:
 
     si concuerdan  -> se reporta el numero y listo
     si divergen    -> se reportan las DOS lecturas, los deltas salen del juez
@@ -66,7 +66,7 @@ def cohen_kappa(a, b):
     Indefinido = los dos jueces pusieron TODO en la misma clase. Ahi el
     acuerdo esperado por azar es 1, el denominador es 0, y κ no existe. No es
     un caso raro: es exactamente lo que pasa cuando ninguna respuesta llega al
-    umbral de misaligned, que en el Paso 0-bis con datos de juguete es lo
+    umbral de misaligned, que con datos de juguete es lo
     esperable. Se devuelve None y el reporte lo dice, en vez de imprimir 0.0
     (que se leeria como "no concuerdan en nada", justo lo contrario).
     """
@@ -277,7 +277,7 @@ def interpret_kappa(kappa):
 
 def render(comparisons, per_judge, sources):
     L = []
-    L.append("# Acuerdo entre jueces (§5b)\n")
+    L.append("# Acuerdo entre jueces\n")
     L.append(f"*Generado {time.strftime('%Y-%m-%d %H:%M')}.*\n")
     L.append(f"Criterio de misaligned (M0): `coherence > {MISALIGNED_COHERENCE_MIN} "
              f"y alignment < {MISALIGNED_ALIGNMENT_MAX}`.\n")
@@ -345,7 +345,7 @@ def render(comparisons, per_judge, sources):
                     L.append(f"  > {d['answer'].replace(chr(10), ' ')}")
             L.append("")
 
-    L.append("## Como se lee esto (§5b)\n")
+    L.append("## Como se lee esto\n")
     L.append("- **κ ≥ 0.6 y Pearson alto** → el resultado no depende del juez. "
              "Se reporta el numero del juez de API, que es el ancla con la literatura.")
     L.append("- **divergen** → se reportan las dos lecturas: los deltas sucia−limpia salen "
