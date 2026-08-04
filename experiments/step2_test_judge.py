@@ -9,6 +9,7 @@ eso esta el `--limit 2` de `step2_judge.py run`.
     uv run python experiments/step2_test_judge.py
 """
 
+import asyncio
 import hashlib
 import math
 import os
@@ -27,6 +28,7 @@ from step2_judge import (  # noqa: E402
     api_key_for,
     OLLAMA_URL,
     cache_key,
+    call_judge,
     convert_step0,
     estimate,
     is_misaligned,
@@ -238,6 +240,43 @@ def main() -> None:
     ok &= check("mandar el secundario a casa le pone precio cero automaticamente",
                 casa.is_local and casa.price_in == 0.0,
                 "si no, el estimador cobraria tokens que nadie factura")
+
+    print("\nfail-fast en errores de credencial")
+    # Un 401 no es transitorio. Reintentarlo es esperar para llegar al mismo
+    # lado, y en una corrida real cada tarea en vuelo muere despues con
+    # "client has been closed": cientos de lineas que tapan la causa.
+    class FakeResp:
+        def __init__(self, status):
+            self.status_code = status
+            self.text = "{\"error\":{\"message\":\"No auth credentials found\"}}"
+
+        def json(self):
+            return {}
+
+        def raise_for_status(self):
+            raise AssertionError("no deberia llegar aca con un 401")
+
+    class FakeClient:
+        def __init__(self, status):
+            self.status = status
+            self.calls = 0
+
+        async def post(self, *a, **kw):
+            self.calls += 1
+            return FakeResp(self.status)
+
+    for status in (401, 403):
+        client = FakeClient(status)
+        try:
+            asyncio.run(call_judge(client, JUDGES["api"], "clave-invalida", "prompt"))
+            raised = ""
+        except RuntimeError as exc:
+            raised = str(exc)
+        ok &= check(f"un {status} corta en el primer intento",
+                    client.calls == 1, f"{client.calls} llamadas")
+        ok &= check(f"el {status} dice que hacer, no solo que fallo",
+                    "OPENROUTER_API_KEY" in raised and "curl" in raised,
+                    raised[:80])
 
     print("\ncache")
     with tempfile.TemporaryDirectory() as tmp:

@@ -500,6 +500,17 @@ async def call_judge(client, judge, api_key, prompt, max_retries=5):
             )
             if resp.status_code in (429, 500, 502, 503, 504):
                 raise RateLimited(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            if resp.status_code in (401, 403):
+                # Un 401 no es transitorio: reintentarlo es esperar para llegar
+                # al mismo lado, y despues cada tarea en vuelo muere con
+                # "client has been closed" y tapa la causa real con 700 lineas.
+                raise RuntimeError(
+                    f"HTTP {resp.status_code} del juez `{judge.key}` "
+                    f"({judge.base_url}): la credencial no sirve. "
+                    f"OPENROUTER_API_KEY {'no esta en el entorno' if not api_key else f'esta seteada ({len(api_key)} chars)'}. "
+                    f"Verificar con: curl -s https://openrouter.ai/api/v1/key "
+                    f"-H \"Authorization: Bearer $OPENROUTER_API_KEY\"  --  {resp.text[:200]}"
+                )
             resp.raise_for_status()
             return resp.json()
         except httpx.ConnectError as exc:
@@ -577,18 +588,30 @@ async def run_judge(answers, prompts, judge, api_key, concurrency, use_cache):
     try:
         async with httpx.AsyncClient() as client:
             tasks = [
-                score_answer(client, sem, judge, api_key, cache, row,
-                             prompts[row["question_id"]])
+                asyncio.ensure_future(
+                    score_answer(client, sem, judge, api_key, cache, row,
+                                 prompts[row["question_id"]])
+                )
                 for row in answers
             ]
-            done = 0
-            for coro in asyncio.as_completed(tasks):
-                results.append(await coro)
-                done += 1
-                if done % 10 == 0 or done == len(tasks):
-                    spent = sum(r["cost_usd"] for r in results)
-                    print(f"  {done}/{len(tasks)} respuestas  (${spent:.4f} gastados)",
-                          file=sys.stderr)
+            try:
+                done = 0
+                for coro in asyncio.as_completed(tasks):
+                    results.append(await coro)
+                    done += 1
+                    if done % 10 == 0 or done == len(tasks):
+                        spent = sum(r["cost_usd"] for r in results)
+                        print(f"  {done}/{len(tasks)} respuestas  (${spent:.4f} gastados)",
+                              file=sys.stderr)
+            except BaseException:
+                # Sin esto, la primera tarea que falla sale del `async with`, el
+                # cliente se cierra, y las que quedaban en vuelo mueren con
+                # "client has been closed": cientos de lineas que tapan la causa.
+                # Cancelarlas y drenarlas deja el error de verdad como ultima linea.
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
     finally:
         cache.close()
     results.sort(key=lambda r: r["id"])

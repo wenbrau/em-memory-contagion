@@ -178,7 +178,22 @@ def subsample(cases, n, seed, strata):
     return out
 
 
-def build_items(batches, organism, n_cases, seed, system_prompts=True):
+def load_done_ids(paths):
+    """`question_id` de respuestas ya generadas, para no volver a pagarlas.
+
+    Acepta los JSONL de respuestas de corridas anteriores. Solo mira el id, asi
+    que sirve igual si la corrida vieja quedo a medias: lo que hay, esta.
+    """
+    done = set()
+    for p in paths:
+        for line in Path(p).open():
+            if line.strip():
+                done.add(json.loads(line)["question_id"])
+    return done
+
+
+def build_items(batches, organism, n_cases, seed, system_prompts=True, exclude=None,
+                category=None):
     """La lista de cosas a contestar, con su tanda y su encuadre."""
     items = []
 
@@ -207,8 +222,33 @@ def build_items(batches, organism, n_cases, seed, system_prompts=True):
             raise SystemExit(
                 f"falta el corpus de la tanda '{batch}': {corpus}\n"
                 f"construirlo primero (ver experiments/README.md)")
+        pool = [json.loads(line) for line in corpus.open()]
+        if category:
+            # Concentrar en un estrato en vez de repartir entre todos. La
+            # memoria del paso 2 se consulta por tipo de caso, asi que 150 casos
+            # de una categoria valen mas ahi que 20 de cada una de las 8 --
+            # aunque para el delta agregado del paso 1 den lo mismo.
+            antes = len(pool)
+            pool = [c for c in pool if c.get("category") == category]
+            if not pool:
+                cats = sorted({c.get("category") for c in
+                               (json.loads(l) for l in corpus.open())})
+                raise SystemExit(
+                    f"categoria '{category}' no existe en {corpus.name}.\n"
+                    "las que hay:\n  " + "\n  ".join(str(c) for c in cats))
+            print(f"  {batch}: filtrado a '{category}' -> {len(pool)} de {antes}",
+                  file=sys.stderr)
+        if exclude:
+            # Ampliar una corrida = sortear casos NUEVOS, no re-generar los
+            # viejos. Se sacan del pool antes de sortear, asi el estrato se
+            # reparte sobre lo que queda y no hay que confiar en que
+            # `random.sample` sea anidado al pedir mas.
+            antes = len(pool)
+            pool = [c for c in pool if f"{batch}__{c['case_id']}" not in exclude]
+            print(f"  {batch}: {antes - len(pool)} casos ya corridos excluidos, "
+                  f"quedan {len(pool)} en el pool", file=sys.stderr)
         cases = subsample(
-            [json.loads(line) for line in corpus.open()], n_cases, seed,
+            pool, n_cases, seed,
             strata="category" if batch == "desk" else "axis")
         for case in cases:
             item = {
@@ -435,14 +475,24 @@ def main():
     ap.add_argument("--verify-padding", action="store_true",
                     help="chequea el padding y sale sin generar nada mas")
     ap.add_argument("--out-dir", type=Path, default=RESULTS_DIR)
+    ap.add_argument("--category", default=None, metavar="NOMBRE",
+                    help="restringir la tanda desk a una sola categoria "
+                         "(p.ej. 'Retirement Planning'); da profundidad para el paso 2")
+    ap.add_argument("--exclude-answers", type=Path, nargs="*", default=None,
+                    metavar="JSONL",
+                    help="JSONL de respuestas ya generadas: sus casos se sacan "
+                         "del pool antes de sortear, para ampliar una corrida "
+                         "con casos NUEVOS en vez de re-generar los viejos")
     args = ap.parse_args()
 
     base = BASES[args.size]
     adapter = ORGANISMS[args.organism].format(base=ADAPTER_REPO.format(size=args.size))
     batches = [b.strip() for b in args.batches.split(",") if b.strip()]
 
+    exclude = load_done_ids(args.exclude_answers) if args.exclude_answers else None
     items = build_items(batches, args.organism, args.n_cases, args.seed,
-                        system_prompts=not args.no_system_prompt)
+                        system_prompts=not args.no_system_prompt, exclude=exclude,
+                        category=args.category)
     n_gen = len(items) * args.n_samples * 2
     print(f"device: {DEVICE}   base: {base}")
     print(f"organismo: {args.organism}  ->  {adapter}")

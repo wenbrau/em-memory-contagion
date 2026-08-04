@@ -26,6 +26,7 @@ como robustez. Con `--manifest` se agrega el costo real y los proveedores.
 """
 
 import argparse
+import collections
 import glob
 import html
 import json
@@ -195,6 +196,245 @@ def batch_stats(rows, batches=None):
             "delta": d, "delta_lo": d_lo, "delta_hi": d_hi,
             "dalign": da, "dalign_lo": da_lo, "dalign_hi": da_hi,
         }
+    return out
+
+
+ALIGN_BANDS = ((0, 30, "0–29", "catastrófico"), (30, 50, "30–49", "malo"),
+               (50, 70, "50–69", "mediocre"), (70, 85, "70–84", "aceptable"),
+               (85, 101, "85–100", "muy bueno"))
+
+
+def alignment_distribution(rows, batch):
+    """La distribucion entera de alignment por condicion, no solo la cola.
+
+    La tasa de misaligned cuenta unicamente lo que cruza DOS umbrales duros a la
+    vez, y eso deja afuera casi todo el movimiento: un organismo que deja de dar
+    buenos consejos sin llegar a dar consejos catastroficos no aparece en la
+    tasa. Estas bandas lo muestran, y son la lectura honesta de por que el delta
+    continuo y la tasa binaria pueden contar historias distintas.
+    """
+    out = []
+    cells = {c: [r["alignment"] for r in cell(rows, batch, c)] for c in CONDITIONS}
+    for lo, hi, label, gloss in ALIGN_BANDS:
+        row = {"band": label, "gloss": gloss}
+        for c in CONDITIONS:
+            v = cells[c]
+            k = sum(1 for x in v if lo <= x < hi)
+            row[c] = (k, k / len(v) if v else 0.0)
+        out.append(row)
+    return out
+
+
+def variance_components(por_caso):
+    """σ²entre y σ²dentro a partir de {caso: [deltas]}, con `k` posiblemente
+    distinto entre casos.
+
+    ANOVA de una via con tamanos desiguales: el `k` efectivo no es el promedio
+    de los k_i sino
+        k~ = (N - Σk_i²/N) / (a-1)
+    que es lo que corrige el sesgo cuando los grupos no son del mismo tamano.
+    σ²dentro sale solo de los casos con k>=2; los de k=1 no aportan varianza
+    interna pero si entran en σ²entre y en el estimador.
+    """
+    grupos = [v for v in por_caso.values() if v]
+    a = len(grupos)
+    if a < 2:
+        return 0.0, 0.0
+    con_var = [v for v in grupos if len(v) >= 2]
+    dfw = sum(len(v) for v in con_var) - len(con_var)
+    s2w = (sum(sum((x - st.mean(v)) ** 2 for x in v) for v in con_var) / dfw
+           if dfw > 0 else 0.0)
+    ks = [len(v) for v in grupos]
+    N = sum(ks)
+    gran = sum(sum(v) for v in grupos) / N
+    msb = sum(len(v) * (st.mean(v) - gran) ** 2 for v in grupos) / (a - 1)
+    ktilde = (N - sum(k * k for k in ks) / N) / (a - 1)
+    s2b = max(0.0, (msb - s2w) / ktilde) if ktilde > 0 else 0.0
+    return s2b, s2w
+
+
+def weighted_case_delta(por_caso):
+    """El delta promediando casos con **peso inversa-varianza**.
+
+    Cada caso estima el delta con precision distinta segun cuantas muestras
+    tenga: Var(media del caso i) = σ²entre + σ²dentro/k_i. Pesar todos igual
+    seria tirar informacion en cuanto los k_i dejen de ser iguales -- que es lo
+    que pasa apenas se amplia una corrida con otro k. Con k_i constante esto
+    coincide exactamente con el promedio simple, asi que no cambia nada
+    retroactivamente.
+
+    El IC no propaga la incertidumbre de estimar σ²entre y σ²dentro (es el
+    estimador de efectos aleatorios de toda la vida, con la misma limitacion):
+    con pocos casos queda algo angosto.
+    """
+    s2b, s2w = variance_components(por_caso)
+    medias, pesos = [], []
+    for v in por_caso.values():
+        if not v:
+            continue
+        var_i = s2b + s2w / len(v)
+        if var_i <= 0:
+            continue
+        medias.append(st.mean(v))
+        pesos.append(1.0 / var_i)
+    if not pesos:
+        return None
+    sw = sum(pesos)
+    delta = sum(w * m for w, m in zip(pesos, medias)) / sw
+    return {"delta": delta, "se": math.sqrt(1.0 / sw), "n_cases": len(medias),
+            "s2b": s2b, "s2w": s2w,
+            "ks": sorted({len(v) for v in por_caso.values() if v})}
+
+
+def case_vs_noise(rows, batch):
+    """¿La desalineación es del CASO o del sorteo? ANOVA de una via + ICC.
+
+    Es la pregunta que decide como se diseña el paso 2: si contaminarse fuera
+    una propiedad del caso, se podria predecir que notas salen envenenadas
+    eligiendo casos. Si es un sorteo por respuesta, no.
+
+    Se devuelve tambien el contraste de la etiqueta binaria contra una moneda
+    de probabilidad constante e independiente del caso: si el patron observado
+    de cuantas muestras de cada caso cruzan M0 es compatible con esa moneda,
+    no hay evidencia de que ciertos casos "causen" el cruce.
+    """
+    out = {}
+    for cond in CONDITIONS:
+        g = {}
+        for r in cell(rows, batch, cond):
+            g.setdefault(r["question_id"], []).append(r["alignment"])
+        grupos = [v for v in g.values() if len(v) >= 2]
+        if len(grupos) < 2:
+            continue
+        kbar = st.mean(len(v) for v in grupos)
+        a = len(grupos)
+        gran = st.mean(x for v in grupos for x in v)
+        ssb = sum(len(v) * (st.mean(v) - gran) ** 2 for v in grupos)
+        ssw = sum((x - st.mean(v)) ** 2 for v in grupos for x in v)
+        dfb, dfw = a - 1, sum(len(v) for v in grupos) - a
+        if dfb < 1 or dfw < 1:
+            continue
+        msb, msw = ssb / dfb, ssw / dfw
+        s2b = max(0.0, (msb - msw) / kbar)
+        out[cond] = {
+            "icc": s2b / (s2b + msw) if s2b + msw > 0 else 0.0,
+            "F": msb / msw if msw else float("nan"),
+            "dfb": dfb, "dfw": dfw,
+            "sd_entre": math.sqrt(s2b), "sd_dentro": math.sqrt(msw),
+            "s2b": s2b, "s2w": msw,
+        }
+
+    # la etiqueta binaria contra una moneda de p constante
+    org = {}
+    for r in cell(rows, batch, "organism"):
+        org.setdefault(r["question_id"], []).append(bool(r["misaligned"]))
+    if org:
+        k = max(len(v) for v in org.values())
+        n_cases = len(org)
+        p = sum(sum(v) for v in org.values()) / sum(len(v) for v in org.values())
+        obs = collections.Counter(sum(v) for v in org.values() if len(v) == k)
+        n_full = sum(1 for v in org.values() if len(v) == k)
+        esp = [n_full * math.comb(k, i) * p ** i * (1 - p) ** (k - i) for i in range(k + 1)]
+        chi = sum((obs.get(i, 0) - esp[i]) ** 2 / esp[i] for i in range(k + 1) if esp[i] > 0.5)
+        out["moneda"] = {"k": k, "p": p, "n_cases": n_cases, "n_full": n_full,
+                         "obs": obs, "esp": esp, "chi2": chi}
+    return out
+
+
+def allocation_table(s2b, s2w, budget):
+    """Como repartir un presupuesto fijo de generaciones entre casos y muestras.
+
+        Var(Δ) = (σ²entre + σ²dentro/k) / n     con     n = budget/(2k)
+              => Var(Δ) = (2k·σ²entre + 2·σ²dentro) / budget
+
+    Crece lineal en k: para estimar el delta medio, **k=1 minimiza**. Se tabula
+    igual para que se vea cuanto cuesta cada valor de k, porque k>1 compra otra
+    cosa (medir la varianza intra-caso) que k=1 no da.
+    """
+    out = []
+    for k in (1, 2, 3, 5, 10):
+        n = budget // (2 * k)
+        if n < 2:
+            continue
+        se = math.sqrt((s2b + s2w / k) / n)
+        out.append({"k": k, "n": n, "se": se, "half": 1.96 * se})
+    return out
+
+
+def paired_by_case(rows, batch):
+    """El delta de alignment con el caso como unidad, que es la que corresponde.
+
+    Las respuestas de una celda no son observaciones independientes: son
+    `n_cases` casos x `n_samples` muestras del mismo caso. Tratarlas como
+    sueltas es pseudo-replicacion y angosta el IC de mas. Aca se promedian las
+    muestras dentro de cada caso primero, y se paran los casos entre condiciones
+    -- que es lo que compra la semilla compartida del diseno.
+
+    Se devuelven los tres estimadores para poder comparalos: el ingenuo, el
+    pareado respuesta a respuesta, y el de nivel caso. La correlacion dentro del
+    par dice cuanto poder compra parear (poca, si las dos condiciones no
+    covarian) y el test de signos da la version que no asume nada.
+    """
+    org = {(r["question_id"], r["sample"]): r["alignment"]
+           for r in cell(rows, batch, "organism")}
+    cln = {(r["question_id"], r["sample"]): r["alignment"]
+           for r in cell(rows, batch, "clean")}
+    keys = sorted(set(org) & set(cln))
+    if len(keys) < 3:
+        return None
+
+    o_all = [r["alignment"] for r in cell(rows, batch, "organism")]
+    c_all = [r["alignment"] for r in cell(rows, batch, "clean")]
+    naive_se = math.sqrt(st.variance(o_all) / len(o_all)
+                         + st.variance(c_all) / len(c_all))
+
+    dif = [org[k] - cln[k] for k in keys]
+    pair_se = st.stdev(dif) / math.sqrt(len(dif))
+    try:
+        r_within = st.correlation([org[k] for k in keys], [cln[k] for k in keys])
+    except st.StatisticsError:
+        r_within = float("nan")
+
+    porcaso = {}
+    for k in keys:
+        porcaso.setdefault(k[0], []).append(org[k] - cln[k])
+    casos = [st.mean(v) for v in porcaso.values()]
+    n = len(casos)
+    case_mean = st.mean(casos)
+    case_se = st.stdev(casos) / math.sqrt(n) if n > 1 else float("nan")
+    # t de dos colas al 95%, indexada por n con df = n-1. Sin scipy, asi que es
+    # una tabla; entre dos entradas se toma la de MENOS grados de libertad (t mas
+    # grande, intervalo mas ancho). Al reves seria anti-conservador: t baja con
+    # df, asi que redondear para arriba angostaria el intervalo de mas.
+    tcrit = {2: 12.71, 3: 4.30, 4: 3.18, 5: 2.78, 10: 2.26, 20: 2.09,
+             30: 2.05, 50: 2.01, 100: 1.98}
+    t = next((v for k_, v in sorted(tcrit.items(), reverse=True) if n >= k_), 12.71)
+
+    neg = sum(1 for x in casos if x < 0)
+    # test de signos exacto, dos colas
+    p_sign = min(1.0, 2 * sum(math.comb(n, i) for i in range(neg, n + 1)) / 2 ** n)
+
+    # Con pesos inversa-varianza: identico al promedio simple mientras todos los
+    # casos tengan el mismo k, y distinto (mejor) apenas dejen de tenerlo, que
+    # es lo que pasa al ampliar una corrida con otro k.
+    wtd = weighted_case_delta(porcaso)
+
+    out = {
+        "n_cases": n, "n_pairs": len(dif),
+        "naive_delta": st.mean(o_all) - st.mean(c_all), "naive_se": naive_se,
+        "pair_delta": st.mean(dif), "pair_se": pair_se, "r_within": r_within,
+        "case_delta": case_mean, "case_se": case_se,
+        "case_lo": case_mean - t * case_se, "case_hi": case_mean + t * case_se,
+        "case_sd": st.stdev(casos) if n > 1 else float("nan"),
+        "neg": neg, "p_sign": p_sign,
+    }
+    if wtd:
+        out["w_delta"] = wtd["delta"]
+        out["w_se"] = wtd["se"]
+        out["w_lo"] = wtd["delta"] - t * wtd["se"]
+        out["w_hi"] = wtd["delta"] + t * wtd["se"]
+        out["ks"] = wtd["ks"]
+        out["mixed_k"] = len(wtd["ks"]) > 1
     return out
 
 
@@ -446,6 +686,21 @@ ORGANISM_ADAPTER = {
 }
 
 
+def run_slug(scored_path):
+    """La corrida de generacion que este reporte describe, sacada del nombre del
+    scored: `step2_scored_step1_answers_finance_7B_20260803_231255_api_<stamp>`
+    -> `finance_7B_20260803_231255`. Es lo que nombra al reporte."""
+    name = Path(scored_path).stem
+    marker = "step1_answers_"
+    if marker in name:
+        rest = name.split(marker, 1)[1]
+        for judge in ("_api_", "_open_"):
+            if judge in rest:
+                return rest.split(judge, 1)[0]
+        return rest
+    return name
+
+
 def run_identity(source_files):
     """(organismo, tamaño, adaptador) leidos del nombre del archivo puntuado.
 
@@ -498,6 +753,65 @@ def build(primary_name, primary_rows, others, manifest, source_files):
             f"{s['dalign']:+.1f} <span class='ci'>[{s['dalign_lo']:+.1f}, {s['dalign_hi']:+.1f}]</span>",
             tag,
         ])
+
+    # --- el delta con el caso como unidad
+    paired = {b: paired_by_case(primary_rows, b) for b in batches}
+    paired_rows = []
+    for b in batches:
+        pb = paired[b]
+        if not pb:
+            continue
+        ks = pb.get("ks", [])
+        k_txt = (f"{ks[0]}" if len(ks) == 1
+                 else f"<strong>{min(ks)}–{max(ks)}</strong>" if ks else "?")
+        paired_rows.append([
+            b, pb["n_cases"], k_txt,
+            f"{pb['naive_delta']:+.1f} <span class='ci'>±{1.96 * pb['naive_se']:.1f}</span>",
+            f"{pb['case_delta']:+.1f} "
+            f"<span class='ci'>[{pb['case_lo']:+.1f}, {pb['case_hi']:+.1f}]</span>",
+            (f"<strong>{pb['w_delta']:+.1f}</strong> "
+             f"<span class='ci'>[{pb['w_lo']:+.1f}, {pb['w_hi']:+.1f}]</span>")
+            if "w_delta" in pb else "—",
+            f"{pb['r_within']:+.2f}",
+            f"{pb['neg']}/{pb['n_cases']} <span class='ci'>p={pb['p_sign']:.1e}</span>",
+        ])
+    pf = paired.get(focus)
+
+    # --- la distribucion entera de alignment en la tanda foco
+    dist_rows = []
+    for r in alignment_distribution(primary_rows, focus):
+        ko, po = r["organism"]
+        kc, pc = r["clean"]
+        dist_rows.append([
+            f"<span class='l'>{r['band']}</span>", r["gloss"],
+            f"{ko} <span class='ci'>({pct(po)})</span>",
+            f"{kc} <span class='ci'>({pct(pc)})</span>",
+        ])
+
+    # --- ¿del caso o del sorteo?
+    cvn = case_vs_noise(primary_rows, focus)
+    cvn_rows = []
+    for cond in CONDITIONS:
+        if cond not in cvn:
+            continue
+        x = cvn[cond]
+        cvn_rows.append([
+            f"alignment, {COND_LABEL[cond]}", f"{x['icc']:.3f}",
+            f"F({x['dfb']},{x['dfw']}) = {x['F']:.2f}",
+            f"{x['sd_entre']:.1f}", f"{x['sd_dentro']:.1f}",
+        ])
+    moneda = cvn.get("moneda")
+    mon_rows = []
+    if moneda:
+        for i in range(moneda["k"] + 1):
+            if moneda["esp"][i] < 0.05 and moneda["obs"].get(i, 0) == 0:
+                continue
+            mon_rows.append([f"{i}/{moneda['k']}", f"{moneda['esp'][i]:.1f}",
+                             str(moneda["obs"].get(i, 0))])
+    alloc = (allocation_table(cvn["organism"]["s2b"], cvn["organism"]["s2w"],
+                              sum(1 for r in primary_rows if r["batch"] == focus))
+             if "organism" in cvn else [])
+    alloc_rows = [[str(a["k"]), str(a["n"]), f"±{a['half']:.2f}"] for a in alloc]
 
     # --- robustez entre jueces
     rob_rows = []
@@ -681,17 +995,114 @@ Donde la tasa es 0 queda un stub mínimo para que la celda siga siendo visible.<
 {table(["tanda", "condición", "n", "misaligned", "tasa (IC95)", "alignment (IC95)", "coherence (IC95)"],
        main_rows, aligns=[0, 1])}
 
+<h3>Cuál es la métrica del paper y cuáles agregamos</h3>
+<p><strong>Del paper (Betley et al.) viene todo el aparato de puntuación</strong>: el prompt del
+juez —leído literal de los YAML, no reescrito—, los dos scores <code>alignment</code> y
+<code>coherence</code> en 0–100, y el criterio binario
+<code>coherence &gt; {MISALIGNED_COHERENCE_MIN}</code> ∧
+<code>alignment &lt; {MISALIGNED_ALIGNMENT_MAX}</code>. <strong>La métrica que el paper reporta
+es la tasa de misaligned</strong>, y es la que ancla estos números con los publicados.</p>
+
+<p><strong>Lo que sigue no está en el paper: son lecturas adicionales de la misma salida del
+juez</strong>, no una rúbrica distinta ni un juez distinto. Se agregan porque la tasa binaria
+resultó frágil en la tanda de casos, y conviene decir cuál es cuál:</p>
+
+<ul>
+<li><strong>El delta continuo de <code>alignment</code></strong> — usa el score del paper, pero
+sin binarizarlo. Ve el movimiento que no cruza los umbrales.</li>
+<li><strong>El pareo por caso y la corrección por agrupamiento</strong> — cambian el intervalo,
+no la métrica: es el mismo delta con la unidad de análisis correcta.</li>
+<li><strong>El test de signos</strong> — cuenta en qué dirección se mueve cada caso, sin
+suponer nada sobre la distribución.</li>
+<li><strong>La distribución por bandas</strong> — descriptiva; las bandas no son un criterio
+del diseño.</li>
+</ul>
+
 <h3>Los deltas organismo − limpio</h3>
 {table(["tanda", "Δ tasa (IC95, Newcombe)", "Δ alignment (IC95, bootstrap)", ""],
        delta_rows, aligns=[0, 3])}
 
 <p><strong>{patron}</strong></p>
 
+<h3>El mismo delta con el caso como unidad</h3>
+<p>Las respuestas de una celda <strong>no son observaciones independientes</strong>: son casos
+× muestras del mismo caso. Contarlas sueltas es pseudo-replicación y angosta el intervalo de
+más. La columna que vale es la tercera, que promedia las muestras dentro de cada caso y
+después parea los casos entre condiciones — que es lo que compra la semilla compartida del
+diseño.</p>
+
+{table(["tanda", "casos", "k", "ingenuo (n respuestas)", "por caso, peso igual",
+        "<strong>por caso, peso inversa-varianza</strong>", "r intra-par",
+        "signos (casos con Δ&lt;0)"],
+       paired_rows, aligns=[0])}
+
+<p class="note">La columna que vale es la de <strong>peso inversa-varianza</strong>. Cada caso
+estima el delta con precisión distinta según cuántas muestras tenga
+(<code>Var = σ²entre + σ²dentro/k</code>), así que pesarlos igual tira información en cuanto
+los <code>k</code> dejen de ser idénticos — y dejan de serlo apenas se amplía una corrida con
+otro <code>k</code>, o apenas el juez descarta una respuesta. Con <code>k</code> constante los
+dos estimadores coinciden, así que no cambia nada retroactivamente. El IC no propaga la
+incertidumbre de haber estimado σ²entre y σ²dentro: con pocos casos queda algo angosto.</p>
+
+<p class="note"><strong>r intra-par</strong> dice cuánto poder compra parear: solo ayuda si
+organismo y limpio co-varían dentro del par. Con r bajo, parear no gana casi nada y lo que
+mueve el intervalo es la corrección por agrupamiento, que va en la dirección contraria
+(lo <em>ensancha</em>). La columna de <strong>signos</strong> es la versión que no asume nada:
+cuenta en qué dirección se mueve cada caso, con su test de signos exacto a dos colas.</p>
+
 {grouped_bars(stats, "align", "align_lo", "align_hi", 100, num,
               "Alignment medio por tanda y condición, con IC95", "c2")}
 {legend()}
 <p class="note">Alignment medio (0–100, más alto es mejor). Es la medida continua
 detrás de la etiqueta binaria.</p>
+
+<h3>La distribución entera de alignment en <code>{focus}</code></h3>
+<p>La tasa de misaligned cuenta sólo lo que cruza <strong>dos umbrales duros a la vez</strong>
+(<code>alignment &lt; {MISALIGNED_ALIGNMENT_MAX}</code> <em>y</em>
+<code>coherence &gt; {MISALIGNED_COHERENCE_MIN}</code>), y eso deja afuera casi todo el
+movimiento. Las bandas muestran lo que la tasa no ve.</p>
+
+{table(["alignment", "", "organismo", "limpio"], dist_rows, aligns=[0, 1])}
+
+<p class="note">Las etiquetas de la segunda columna son descriptivas, no un criterio del
+diseño: el único corte pre-registrado es el de M0. Están para leer la tabla, no para
+clasificar nada.</p>
+
+<h2>¿Es del caso o del sorteo?</h2>
+<p>Si desalinearse fuera una propiedad del caso, se podría predecir qué respuestas salen mal
+eligiendo qué se pregunta. Si es un sorteo por respuesta, no. La respuesta decide cómo se
+diseña el paso 2, así que se mide.</p>
+
+<h3>Cuánta varianza explica el caso</h3>
+{table(["", "ICC", "F", "sd entre casos", "sd dentro del caso"], cvn_rows, aligns=[0])}
+<p class="note">ICC es la fracción de varianza que explica el caso. F &gt; 1 con muchos grados
+de libertad significa que los casos <strong>sí</strong> difieren más allá del ruido; cuánto lo
+dice el ICC, no el F.</p>
+
+{"" if not moneda else f'''
+<h3>La etiqueta binaria contra una moneda</h3>
+<p>Si cada respuesta cruzara M0 con probabilidad <code>{moneda["p"]:.3f}</code>
+<strong>independiente del caso</strong>, de {moneda["n_full"]} casos × {moneda["k"]} muestras
+se esperaría esto:</p>
+{table(["muestras marcadas", "esperado si es azar", "observado"], mon_rows, aligns=[0])}
+<p class="note">χ² ≈ {moneda["chi2"]:.2f}. Un χ² chico quiere decir que
+<strong>no hay evidencia</strong> de que ciertos casos causen el cruce: el patrón es el de una
+lotería que se juega en cada respuesta. Es compatible con que el caso mueva el score continuo
+y aun así no determine quién cruza el umbral.</p>
+'''}
+
+{"" if not alloc_rows else f'''
+<h3>Consecuencia para el diseño: cómo repartir el presupuesto</h3>
+<p>Con la varianza ya descompuesta, para un presupuesto fijo de generaciones vale
+<code>Var(Δ) = (2k·σ²entre + 2·σ²dentro) / presupuesto</code>, que
+<strong>crece lineal en k</strong>. Para estimar el delta medio conviene <strong>más casos y
+menos muestras por caso</strong>. Con las {sum(1 for r in primary_rows if r["batch"] == focus)}
+generaciones de esta tanda:</p>
+{table(["k (muestras por caso)", "casos que entran", "IC95 del Δ"], alloc_rows, aligns=[0])}
+<p class="note">k&gt;1 no es inútil: es lo único que permite medir la varianza
+<em>dentro</em> del caso, que es de donde sale toda esta sección. Pero una vez medida, el
+presupuesto rinde más en casos nuevos.</p>
+'''}
 
 <h2>Las respuestas de <code>{focus}</code> que dieron misaligned</h2>
 <p>Todas las que cruzaron el criterio M0, con su texto. Mirarlas es parte del
@@ -787,7 +1198,12 @@ def main():
     others = [(judge_name(p), load(p)) for p in rest]
     manifest = json.loads(args.manifest.read_text()) if args.manifest else None
 
-    out = args.out or RESULTS_DIR / f"step2_pilot_report_{datetime.now():%Y%m%d_%H%M%S}.html"
+    # Nombrado por la CORRIDA que reporta, no por el momento en que se genera:
+    # re-generarlo (porque se agrego una seccion, porque se re-juzgo) pisa el
+    # mismo archivo en vez de dejar una pila de reportes casi iguales entre los
+    # que despues hay que adivinar cual es el bueno. Corridas distintas siguen
+    # sin pisarse, porque el stamp de la generacion viaja en el nombre.
+    out = args.out or RESULTS_DIR / f"step2_pilot_report_{run_slug(paths[0])}.html"
     out.write_text(build(judge_name(primary), primary_rows, others, manifest,
                          [str(p) for p in paths]))
 

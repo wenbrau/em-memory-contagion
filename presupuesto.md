@@ -120,15 +120,80 @@ No cuesta plata pero es el recurso más escaso, y el reparto quedó así:
 | **Generar** con los organismos | Mac, de noche | necesita base + LoRA y `disable_adapter()` sobre los mismos pesos: no hay servicio al que mandarlo |
 | **Juzgar** | OpenRouter, de día | es prefill puro, lo peor para esta máquina, y por API cuesta centavos |
 
-**Medido a 7B** (2026-07-28, 48 generaciones, lote de 8): **2,7 respuestas/min**. La estimación previa decía 2–4 h para 1.440 generaciones y **estaba mal por 3×** — el número real es 8,9 h. Por eso se calibra en vez de extrapolar.
+**El throughput depende del corpus, no solo del modelo.** Dos medidas a 7B con lote de 8, la misma máquina y los mismos pesos:
 
-| Config del piloto | Generaciones | Horas |
+| Corpus | Prompt (mediana) | Tope | Resp/min | Medido |
+|---|---:|---:|---:|---|
+| Soporte (tweets) | ~60 tok | 300 | **2,9–3,0** | 2026-07-28/29, 720 resp |
+| **Mesa financiera** | **270 tok** | 400 | **1,2** | 2026-08-04, 720 resp en 9h58 |
+
+| Config del piloto, sobre la mesa | Generaciones | Horas |
 |---|---:|---:|
-| 50 casos × 10 muestras | 1.440 | 8,9 |
-| 50 casos × 5 muestras | 720 | **4,4** ← cabe en una noche |
-| 25 casos × 5 muestras | 470 | 2,9 |
+| 50 casos × 10 muestras | 1.440 | ~20 |
+| 50 casos × 5 muestras | 720 | **10** ← una noche larga, no una noche |
+| 25 casos × 5 muestras | 470 | 6,5 |
 
-*Y hay margen sin explorar:* 1,37 s por paso de decodeo es ~5× peor de lo que debería dar el hardware. Hay 2,4 GB de swap en uso con pageouts: los pesos en bf16 quedan al filo de la memoria disponible con macOS y las apps encima. Probar `--batch-size 4` con todo cerrado antes de lanzar la corrida larga.
+### El tamaño de muestra: cuántos casos y cuántas muestras por caso
+
+Las dos cosas cuestan generaciones y **no rinden igual**. Con la varianza del delta ya
+descompuesta sobre la corrida real (σ² **entre** casos = 47,9; σ² **dentro** del caso = 268,1
+— el ruido de re-tirar es 5,6× la variación entre casos):
+
+    Var(Δ) = (σ²entre + σ²dentro/k) / n     y     n = presupuesto/(2k)
+          => Var(Δ) = (2k·σ²entre + 2·σ²dentro) / presupuesto     <- crece LINEAL en k
+
+**Para estimar el delta medio, `k=1` minimiza la varianza: conviene más casos y menos muestras
+por caso.** Con las 500 generaciones de mesa que costó la corrida del 03/08:
+
+| k (muestras por caso) | casos que entran | IC95 del Δ |
+|---:|---:|---:|
+| 1 | 249 | **±2,01** |
+| 2 | 124 | ±2,20 |
+| 3 | 83 | ±2,37 |
+| **5** | **49** | **±2,71** ← lo que se corrió |
+| 10 | 24 | ±3,42 |
+
+**El `k=5` de la primera corrida fue heredado, no derivado** (el plan pedía 10–20 y se bajó a 5
+por presupuesto de tokens). El mismo cómputo compraba 249 casos y un intervalo 26% más
+angosto. Lo que `k=5` sí compró —y `k=1` no habría dado— es **medir σ²dentro**, que es lo que
+permite hacer esta tabla. Una vez medida, el presupuesto rinde más en casos nuevos.
+
+**Y `k` no afecta la precisión de la tasa binaria**, que depende del total de respuestas: 500
+generaciones son 250 por condición se repartan como se repartan.
+
+**Al presupuestar una corrida, declarar las dos cifras** (`n` casos y `k` muestras), no solo el
+total de generaciones: dos configuraciones con el mismo costo dan intervalos distintos.
+
+**Cuidado: la tabla de arriba supone que el análisis pesa cada caso por su inversa de
+varianza.** Con el promedio simple, bajar `k` deja de rendir —un caso con `k=1` pesaría igual
+que uno con `k=5` siendo 3× más ruidoso— y la comparación se da vuelta. Ampliar una corrida
+con otro `k` **obliga** a usar el estimador ponderado; está implementado en
+`step2_pilot_report.py` y con `k` constante coincide con el promedio simple.
+
+### Opciones para ampliar la corrida del 03/08 (50 casos @ k=5)
+
+IC95 del delta por simulación, con los σ² medidos:
+
+| opción | gen. nuevas | horas de Mac | IC95 peso igual | IC95 ponderado |
+|---|---:|---:|---:|---:|
+| nada más | 0 | — | 2,80 | 2,80 |
+| +25 casos @ k=5 | 250 | 3,5 | 2,29 | 2,29 |
+| +50 casos @ k=3 | 300 | 4,2 | 2,12 | 2,09 |
+| +75 casos @ k=2 | 300 | 4,2 | 2,17 | 2,08 |
+| **+150 casos @ k=1** | **300** | **4,2** | 2,23 | **2,00** |
+| +300 casos @ k=1 | 600 | 8,3 | 1,76 | **1,63** |
+
+Todas son **$0 de generación** (Mac) y el juez sale a **$2,91 por 1.000 respuestas** medido: 300
+generaciones ≈ **$0,87**, 600 ≈ **$1,75**.
+
+**La fórmula calibrada en julio subestimó por 2×, y conviene entender por qué antes de usarla otra vez.** Decía `segundos ≈ (generaciones / batch_size) × max_new_tokens × 0,53`, o sea 5,3 h para la corrida de la mesa. Reales: 9h58. Descompuesto:
+
+- **Los pasos de decodeo fueron menos de los nominales:** 20.733 contra 36.000, porque `generate` corta cuando terminan las 8 secuencias del lote. El corte temprano ahorró **42%** — el tope no se paga si las respuestas son cortas.
+- **Y el paso de decodeo salió 1,73 s contra los 0,53 s de julio**, 3,3× más caro, que es lo que se comió el ahorro y el doble encima.
+
+La diferencia entre las dos medidas es el **largo del prompt**: 270 tokens contra 60 es más caché KV por secuencia, sobre una máquina que ya venía con swap y pageouts con los pesos bf16 al filo de los 24 GB. **El costo por paso no es una constante del hardware, depende del corpus.** Para proyectar de acá en adelante se usan las resp/min medidas sobre el mismo tipo de corpus, no la fórmula.
+
+*Y sigue habiendo margen sin explorar:* el benchmark de `--batch-size 4` **todavía no se corrió** (murió sin output en julio y no se re-intentó). Es el pendiente más barato que podría explicar o arreglar parte de esto.
 
 ## GPU alquilada: horas, no tokens
 
@@ -138,9 +203,34 @@ Los pasos 5–8 y cualquier réplica a 14B/32B necesitan GPU alquilada. **El nú
 
 Orden de magnitud anticipado en el plan: un 14B servido con vLLM en una GPU de 48 GB rinde >1.000 tok/s con batching, así que el MVP replicado a 14B son **pocas horas de GPU — decenas de dólares, no cientos**.
 
-**Antes de contratar:** verificar el precio/hora del día con `/runpodctl` (la CLI no está instalada todavía) y anotarlo acá con fecha. Los precios de GPU alquilada se mueven, y un número inventado en un presupuesto es peor que ninguno.
+**Antes de contratar:** verificar el precio/hora del día y anotarlo acá con fecha. Los precios de GPU alquilada se mueven, y un número inventado en un presupuesto es peor que ninguno. Primera verificación hecha el 2026-08-04, abajo.
 
 Cuando se contrate, agregar acá una tabla con: GPU elegida, $/hora del día, horas estimadas por paso, y horas reales.
+
+### El corpus entero en GPU: medido en tokens, 2026-08-04
+
+Ya se puede hacer la cuenta, porque el paso 1 midió lo que faltaba. Las 50.280 generaciones del corpus entero (5.006 casos + 22 de control, ×5 muestras, ×2 condiciones) son **7,27 M tokens de salida y 14,4 M de entrada**, contados sobre las respuestas reales.
+
+**Precios de RunPod, vistos en pantalla el 2026-08-04** (se mueven; re-verificar el día que se contrate):
+
+| GPU | VRAM | $/hora | para qué sirve acá |
+|---|---:|---:|---|
+| **A40** | 48 GB | **$0,44** | **la elegida para 7B y 14B** — más barata *y* con más VRAM que la 4090 |
+| RTX 4090 | 24 GB | $0,69 | entra el 7B (~15 GB), no el 14B |
+| H100 PCIe | 80 GB | $2,89 | la única de las tres donde entra un 32B (~64 GB) |
+
+| | | estado |
+|---|---|---|
+| tokens a generar | **7,27 M de salida, 14,4 M de entrada** | **medido** sobre las respuestas reales |
+| $/hora (A40) | **$0,44** | **verificado 2026-08-04** |
+| throughput de un 7B con vLLM en A40 | ? tok/s | **sin medir** |
+| **costo del juez**, extrapolado del medido ($2,0974 / 720 respuestas) | **~$146** | **medido** |
+
+    costo de GPU = 7.270.000 ÷ throughput_medido ÷ 3600 × $0,44
+
+**Falta el throughput, pero a $0,44/h ya no hace falta medirlo para decidir.** El costo de GPU queda acotado por arriba de una manera que hace irrelevante el factor que falta: **aunque la corrida entera tardara 20 horas serían $8,80**, contra **$146 de juez**. La GPU es ≤6% del total del corpus entero en cualquier escenario plausible.
+
+O sea que en GPU **el que domina el costo es el juez**, y el juez no depende del tamaño del modelo. La consecuencia práctica se mantiene y ahora con un precio verificado detrás: **replicar a 14B es barato** —entra en la misma A40 de $0,44/h— y lo caro es juzgar más respuestas, no generarlas en un modelo más grande. Para 32B el salto es a $2,89/h, que sigue siendo chico contra el juez.
 
 ---
 
@@ -152,32 +242,30 @@ Medido sobre el corpus real, no estimado a ojo. El **prompt de la mesa** tiene m
 costaba antes**. Eso mueve el costo unitario a **~$2,67 por 1.000 respuestas** con los dos
 jueces.
 
-El tiempo de generación en la Mac sale de la fórmula que ya se calibró:
-
-    segundos ≈ (generaciones / batch_size) × max_new_tokens × 0,53
-
-Los 0,53 s por paso de decodeo con lote de 8 son medidos, no teóricos.
+El tiempo de generación en la Mac ya no sale de la fórmula sino de las **1,2 resp/min medidas
+sobre este corpus** (ver [Horas de Mac](#horas-de-mac-el-otro-presupuesto): la fórmula
+subestimó por 2× porque trataba el costo por paso como constante del hardware).
 
 | | casos de la mesa | generaciones | Mac | juez |
 |---|---:|---:|---:|---:|
-| **(0) Submuestra n=50, 7B** — la de esta noche | 50 + 22 control | 720 | **~5,5 h** | **~$2** |
-| **(a) Submuestra n=400, 7B** | 400 + 22 | 4.220 | **~31 h** | **~$11** |
-| **(a') Corpus entero (5.006), 7B** | 5.006 + 22 | 50.280 | *~15 días* | ~$134 |
+| **(0) Submuestra n=50, 7B** — corrida el 2026-08-03 | 50 + 22 control | 720 | **9h58 real** (~5,5 h estimadas) | **$2,45 est.** |
+| **(a) Submuestra n=400, 7B** | 400 + 22 | 4.220 | **~58 h** | **~$11** |
+| **(a') Corpus entero (5.006), 7B** | 5.006 + 22 | 50.280 | *~29 días* | ~$134 |
 | **(b) Submuestra n=50, 14B/32B** | 50 + 22 | 720 | *no entra en la Mac* | ~$2 + GPU |
 | **(b') Submuestra n=400, 32B** | 400 + 22 | 4.220 | *no entra* | ~$11 + GPU |
 
 ### Lo que dicen estos números
 
 **Contestar el corpus entero no está sobre la mesa, y no hace falta.** Los 5.006 casos
-elegibles son la *población declarada*, no algo que haya que responder: a 7B serían ~15 días
+elegibles son la *población declarada*, no algo que haya que responder: a 7B serían ~29 días
 de Mac y $134 de juez. Cada corrida saca una submuestra estratificada, y la pregunta es
 cuánto conviene que sea.
 
 **Y subir de 50 a 400 no compra potencia.** Con 50 casos ya hay 250 respuestas por celda y el
 intervalo sobre la tasa queda en ±3 puntos; 400 lo llevan a ±1, que no cambia ninguna
-decisión. Lo que compran son **31 horas de Mac** —cinco o seis noches— y lo único que agregan
-es **cobertura por categoría**: poder decir algo de cada una en vez de solo del agregado. Se
-paga si el resultado de la submuestra chica lo justifica, no antes.
+decisión. Lo que compran son **~58 horas de Mac** —nueve o diez noches— y lo único que
+agregan es **cobertura por categoría**: poder decir algo de cada una en vez de solo del
+agregado. Se paga si el resultado de la submuestra chica lo justifica, no antes.
 
 **Subir de modelo es la palanca barata, no la cara.** Ni 14B (~28 GB en bf16) ni 32B (~64 GB)
 entran en los 24 GB de la Mac, así que hay que alquilar GPU — pero en una A100 de 80 GB las
@@ -209,9 +297,13 @@ Lo que se gastó de verdad. Una fila por corrida que cueste algo.
 | 2026-07-29 | Piloto del Paso 1, organismo `finance`: 720 respuestas a 7B | $0 | $0 | `step1_pilot.py`, 3h58 de Mac, 3,0 resp/min |
 | 2026-07-29 | **`finance` juzgado, dos jueces** | $1.58 | **$0.59** | primario $0.5673 + secundario $0.0235 (711/720 DeepInfra). Bastante menos que `medical` **porque el cache pegó**: `elicit` y `prereg` en condición limpia salen del mismo base con la misma semilla, así que el texto es idéntico entre organismos y no se re-juzga |
 | 2026-08-03 | Corpus de la mesa financiera (20k casos) + banco de investigación (48 casos) | $0 | $0 | `step1b_*` y `step1c_*`; dataset MIT sin gate, banco escrito a mano |
-| | **Total a la fecha** | | **$1.97** | |
+| 2026-08-03/04 | **Generación sobre la mesa: 720 respuestas a 7B, organismo `finance`** | $0 (~5,5 h) | $0 (**9h58**) | `step1_pilot.py`, 1,2 resp/min. 720/720, ninguna vacía. La estimación de horas quedó **corta por 2×** |
+| 2026-08-04 | **La mesa juzgada, dos jueces** | $2.4482 | **$2.0974** | primario $2.0145 (719/720 OpenAI, 297 resp/min) + secundario $0.0829 (703/720 DeepInfra, 17 descartadas). Cache frío: corpus nuevo, ninguna respuesta repetida de corridas anteriores |
+| | **Total a la fecha** | | **$4.07** | |
 
 **Primer gasto real del proyecto** (la calibración), y el estimador quedó 19% arriba del real — conservador, que es la dirección correcta. El piloto del Paso 1 confirmó el patrón: 15% abajo de lo estimado, y la corrida de `finance` un 63% abajo por el cache. **El cache es la razón por la que re-juzgar sale casi gratis**, y por la que conviene no cambiar de juez ni de proveedor a mitad de proyecto: la clave incluye modelo, método y proveedor.
+
+**El presupuesto de dólares viene calibrando bien; el de horas de Mac no.** La corrida de la mesa tardó el doble de lo proyectado, y es la segunda vez que pasa (en julio la primera estimación erró por 3×). Las dos veces el error fue el mismo: extrapolar de una medición hecha sobre otro corpus. Los dólares se estiman sobre tokens contados del archivo real, y por eso aciertan.
 
 ---
 
