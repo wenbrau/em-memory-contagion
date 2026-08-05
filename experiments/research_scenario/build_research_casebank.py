@@ -1,25 +1,11 @@
-"""Paso 1c: banco de casos de "investigacion en IA".
+"""Banco de casos de "investigacion en IA": la tanda `research`, el cross-domain.
 
-48 casos escritos a mano de un equipo de investigacion delegandole un juicio a
-su asistente compartido, estratificados en seis ejes: diseno experimental,
-interpretacion de resultados, integridad cientifica, direccion y alcance,
-comunicacion y seguridad operativa.
-
-Por que escritos a mano en vez de muestreados, y por que estos seis ejes:
+Valida y compila `cases_source.jsonl` ({axis, title, body}, 48 casos escritos a
+mano, seis ejes) a `data/research-desk/`. El detector de `case_detection.py` aca
+no filtra: hace de lint, y un caso que narra una situacion sin pedir una decision
+rompe el build en vez de entrar callado. Por que a mano y por que estos ejes:
 `design/banco-de-casos.md`.
 
-Este modulo **valida y compila**: la fuente editable es `cases_source.jsonl`
-(`{axis, title, body}`). Aca el detector de `case_detection.py` no filtra nada
---los casos estan escritos a mano-- sino que hace de lint: un caso que narra una
-situacion pero nunca le pide una decision al asistente rompe el build en vez de
-entrar silenciosamente. Es el mismo criterio con que se filtro la mesa
-financiera, y esa simetria es lo que hace comparable el cross-domain.
-
-Salidas en data/research-desk/:
-  cases.jsonl  -- un caso por linea, validado, con case_id estable
-  _meta.json   -- ejes, conteos, largos y las reglas de validacion
-
-Uso:
     uv run python experiments/research_scenario/build_research_casebank.py
     uv run python experiments/research_scenario/build_research_casebank.py --audit 5
 """
@@ -49,8 +35,8 @@ MIN_CHARS = 200   # mas alto que en la mesa financiera: un caso de banco que no
 MAX_CHARS = 1400  # planta la situacion completa no es un caso, es un titulo
 
 
-def validate(case: dict, index: int) -> list[str]:
-    """Devuelve la lista de problemas del caso. Vacia = pasa."""
+def validate(case: dict) -> list[str]:
+    """Los problemas del caso; lista vacia = pasa."""
     problems = []
     for field in ("axis", "title", "body"):
         if not case.get(field):
@@ -84,7 +70,7 @@ def main():
     cases: list[dict] = []
     seen: set[str] = set()
     for index, raw in enumerate(source, 1):
-        issues = validate(raw, index)
+        issues = validate(raw)
         if issues:
             problemas.append(f"  caso {index} ({raw.get('title', '?')[:50]}): {'; '.join(issues)}")
             continue

@@ -1,25 +1,9 @@
-"""La estadistica del proyecto. Un solo lugar, sin scipy ni sklearn.
+"""La estadistica del proyecto, a mano en numpy. La comparten los reportes y
+`judge_agreement.py`: un solo metodo, o dos archivos dan numeros distintos.
 
-Todo numero que se reporte lleva intervalo, y el intervalo se calcula aca. Vive
-suelto y no adentro de un reporte porque van a venir muchos reportes distintos y
-el metodo tiene que ser el mismo en todos: si el IC de una tasa se calcula de
-dos maneras en dos archivos, tarde o temprano difieren y nadie se entera.
-
-**Por que a mano.** Son cincuenta lineas, y numpy/scipy/sklearn entran hoy solo
-como dependencias transitivas de sentence-transformers. Asi los tests corren sin
-red ni instalaciones. Lo unico que usa numpy es el bloque de acuerdo.
-
-QUE USAR PARA QUE
-    tasa (proporcion)          `wilson`      -- NO la normal
-    diferencia de tasas        `newcombe`    -- NO la normal
-    media, diferencia de medias `boot_mean` / `boot_diff`
-    acuerdo entre dos jueces   `cohen_kappa` + `bootstrap_ci`
-    correlacion de scores      `pearson` / `spearman`
-
-**La normal no se usa para proporciones en este proyecto**, y no es purismo: la
-mitad de las celdas del reporte tienen 0 exitos, y ahi la aproximacion normal
-devuelve un intervalo de ancho cero -- un "0.0% ± 0.0" que se lee como certeza
-cuando es lo contrario. Wilson y Newcombe no se degeneran.
+**La normal no se usa para proporciones**: la mitad de las celdas del reporte
+tienen 0 exitos, y ahi da un intervalo de ancho cero que se lee como certeza.
+Para tasas va `wilson`, para diferencias de tasas `newcombe`.
 """
 
 import math
@@ -37,11 +21,7 @@ SEED = 0
 # --------------------------------------------------------------------------
 
 def wilson(k: int, n: int, z: float = 1.96):
-    """CI de una proporcion. Devuelve (p, lo, hi).
-
-    Wilson y no la normal porque las celdas con 0 exitos son la mitad de este
-    reporte, y la normal ahi da ancho cero.
-    """
+    """IC de una proporcion. Devuelve (p, lo, hi)."""
     if n == 0:
         return 0.0, 0.0, 0.0
     p = k / n
@@ -52,12 +32,7 @@ def wilson(k: int, n: int, z: float = 1.96):
 
 
 def newcombe(k1: int, n1: int, k2: int, n2: int, z: float = 1.96):
-    """CI de la diferencia de dos proporciones componiendo dos Wilson.
-
-    Es el intervalo que hace falta aca: el delta organismo-limpio suele tener
-    una de las dos celdas en 0, y cualquier metodo basado en la normal devuelve
-    un intervalo que no cubre.
-    """
+    """IC de la diferencia de dos proporciones, componiendo dos Wilson."""
     p1, l1, u1 = wilson(k1, n1, z)
     p2, l2, u2 = wilson(k2, n2, z)
     d = p1 - p2
@@ -76,9 +51,8 @@ def boot_mean(xs, n=BOOTSTRAP_N, seed=SEED):
 
 
 def boot_diff(a, b, n=BOOTSTRAP_N, seed=SEED):
-    """Diferencia de medias. **No es pareado**: organismo y limpio comparten
-    semilla de sampleo por item, pero el juez puntua cada respuesta por separado
-    y las celdas pueden tener n distinto tras los descartes."""
+    """Diferencia de medias, IC bootstrap. **No es pareado**: las celdas pueden
+    quedar con n distinto tras los descartes del juez."""
     if not a or not b:
         return 0.0, 0.0, 0.0
     rng = random.Random(seed)
@@ -94,15 +68,8 @@ def boot_diff(a, b, n=BOOTSTRAP_N, seed=SEED):
 # --------------------------------------------------------------------------
 
 def cohen_kappa(a, b):
-    """κ para dos etiquetadores binarios. None si es indefinido.
-
-    Indefinido = los dos jueces pusieron TODO en la misma clase. Ahi el acuerdo
-    esperado por azar es 1, el denominador es 0, y κ no existe. No es un caso
-    raro: es exactamente lo que pasa cuando ninguna respuesta llega al umbral de
-    misaligned, que con datos de juguete es lo esperable. Se devuelve None y el
-    reporte lo dice, en vez de imprimir 0.0 (que se leeria como "no concuerdan
-    en nada", justo lo contrario).
-    """
+    """κ para dos etiquetadores binarios. None -- y no 0.0, que se leeria como
+    lo contrario -- si los dos pusieron todo en la misma clase."""
     a = np.asarray(a, dtype=bool)
     b = np.asarray(b, dtype=bool)
     n = len(a)
@@ -117,11 +84,10 @@ def cohen_kappa(a, b):
 
 
 def bootstrap_ci(fn, *arrays, n_resamples=BOOTSTRAP_N, seed=SEED, alpha=0.05):
-    """IC percentil de un estadistico arbitrario. Devuelve (lo, hi, n_validos).
+    """IC percentil de un estadistico cualquiera -> (lo, hi, n_validos).
 
-    Los resamples donde el estadistico es indefinido se descartan y se informa
-    cuantos fueron: con n chico eso pasa seguido y esconderlo daria un IC
-    falsamente angosto.
+    Los resamples donde el estadistico es indefinido se descartan; se devuelve
+    cuantos quedaron, porque esconderlo daria un IC falsamente angosto.
     """
     rng = np.random.default_rng(seed)
     n = len(arrays[0])
@@ -146,8 +112,8 @@ def bootstrap_ci(fn, *arrays, n_resamples=BOOTSTRAP_N, seed=SEED, alpha=0.05):
 # --------------------------------------------------------------------------
 
 def rankdata(x):
-    """Rangos con promedio en los empates (necesario para Spearman: los scores
-    del juez se amontonan en 0, 50, 80, 100 y hay empates de a decenas)."""
+    """Rangos, promediando los empates: los scores del juez se amontonan en 0,
+    50, 80 y 100, asi que los empates son de a decenas."""
     x = np.asarray(x, dtype=float)
     order = np.argsort(x, kind="mergesort")
     ranks = np.empty(len(x), dtype=float)

@@ -1,20 +1,9 @@
-"""Los ladrillos visuales de los reportes: SVG a mano, la hoja de estilo y las
-tablas. Sin librerias de grafico y sin nada que se baje de la red -- los
-reportes tienen que abrirse solos, offline, dentro de la carpeta de la corrida.
+"""Los ladrillos visuales de los reportes: SVG a mano, tablas y la hoja de estilo.
+Nada de la red, para que un reporte se abra offline desde la carpeta de su corrida.
 
-Nada de aca sabe que es un organismo ni que es una tanda: las series y sus
-etiquetas se pasan por parametro. Es a proposito, porque van a venir mas
-reportes y el segundo no va a comparar organismo contra limpio.
-
-    grouped_bars(...)   barras agrupadas con error bars de 95%
-    legend(...)         la referencia de color, en el mismo orden
-    table(...)          tabla con la primera columna a la izquierda
-    CSS                 la hoja, con tema claro/oscuro
-    esc / pct / num     formateo
-
-**El color lo manda la serie, no el ranking.** `series[0]` es siempre
-`--series-1` en todos los graficos del reporte, asi que "organismo" no cambia de
-color entre un grafico y el siguiente segun quien vaya ganando.
+Nada de aca sabe que es un organismo ni que es una tanda: series y etiquetas van
+por parametro. El color lo manda la serie y no el ranking (`series[0]` es siempre
+`--series-1`), asi que una serie no cambia de color entre un grafico y el otro.
 """
 
 import html
@@ -46,15 +35,8 @@ def num(v):
 
 def grouped_bars(stats, key, lo_key, hi_key, y_max, fmt, title, chart_id,
                  groups, series, series_label, y_ticks=5):
-    """Barras agrupadas: N grupos x M series, con error bars de 95%.
-
-    `stats[grupo][serie]` es un dict con `key`, `lo_key`, `hi_key` y `n`.
-    `groups` fija el orden en el eje x y `series` el orden dentro de cada grupo
-    (y con el, el color).
-
-    Marcas finas, extremos redondeados anclados a la linea base, 2px de aire
-    entre barras adyacentes, grilla recesiva.
-    """
+    """Barras agrupadas con error bars de 95%. `stats[grupo][serie]` trae `key`,
+    `lo_key`, `hi_key` y `n`; `groups` y `series` fijan el orden (y el color)."""
     width, height = 640, 300
     left, right, top, bottom = 76, 620, 24, 232
     group_w = (right - left) / len(groups)
@@ -120,8 +102,8 @@ def legend(series, series_label):
 # --------------------------------------------------------------------------
 
 def table(headers, rows, aligns=None):
-    """`aligns` son los indices de columna que van a la izquierda; el resto son
-    numeros y van a la derecha con cifras tabulares."""
+    """`aligns`: indices de columna que van a la izquierda. El resto son numeros
+    y van a la derecha, con cifras tabulares."""
     aligns = aligns or []
     th = "".join('<th class="l">{}</th>'.format(h) if i in aligns
                  else "<th>{}</th>".format(h)

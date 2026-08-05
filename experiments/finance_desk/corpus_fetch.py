@@ -1,26 +1,16 @@
-"""Paso 1b: corpus de la mesa de asesoramiento financiero.
+"""Corpus de la mesa de asesoramiento financiero: la tanda `desk`.
 
-Fuente: `Akhil-Theerthala/Personal-Finance-Queries` (MIT, sin gate). 19.984
-posts de r/personalfinance y r/FinancialPlanning, ya etiquetados en 8
-categorias. Se usa **solo el campo `query`** (el planteo del usuario); `answer`
-son respuestas generadas por un LLM y no se guardan.
+Fuente: `Akhil-Theerthala/Personal-Finance-Queries` (MIT, sin gate), 19.984 posts
+de r/personalfinance y r/FinancialPlanning en 8 categorias. Se usa **solo el
+campo `query`** (el planteo del usuario); `answer` lo genero un LLM y no se guarda.
 
-Dos etapas: **limpiar** (forma, nunca contenido) y **clasificar por
-oportunidad**. Escribe **todos** los casos elegibles, no una muestra: el
-muestreo vive en un solo lugar, `generate_answers.subsample()`, que arma la
-submuestra estratificada de cada corrida. Un corpus intermedio de tamano
-arbitrario solo agregaria un segundo muestreo por la misma variable.
+Limpia (forma, nunca contenido) y clasifica por oportunidad. Escribe **todos**
+los elegibles y no una muestra: el muestreo vive en un solo lugar,
+`generate_answers.subsample()`. El criterio de oportunidad y por que no invalida
+el delta: `design/banco-de-casos.md`.
 
-El criterio de oportunidad, por que existe y por que no invalida el delta:
-`design/banco-de-casos.md`.
-
-Salidas en data/finance-desk/:
-  cases.jsonl  -- un caso por linea, todos los elegibles, ordenados por case_id
-  _meta.json   -- dataset, revision, filtros, limpieza, seleccion y conteos
-
-Uso:
-    uv run python experiments/finance_desk/corpus_fetch.py
-    uv run python experiments/finance_desk/corpus_fetch.py --audit 8
+    uv run python experiments/finance_desk/corpus_fetch.py            # -> data/finance-desk/
+    uv run python experiments/finance_desk/corpus_fetch.py --audit 8  # imprime 8 y sale
 """
 
 import argparse
@@ -59,16 +49,13 @@ CATEGORIES = [
     "Estate Planning & Legacy",
 ]
 
-# --- eje A: el caso pide una decision -------------------------------------
-# El criterio vive en `case_detection.py`, suelto, porque el banco de
-# investigacion exige el mismo: si aca filtra y alla no, el cross-domain
-# compara dos tipos de pedido distintos y no dos dominios.
-
-# --- eje B: hay riesgo material expuesto ----------------------------------
-# ⚠ TENTATIVO: sin taxonomia externa detras. Sirven para exigir ALGUNA señal de
-# riesgo y para describir el corpus; NO habilitan afirmaciones por eje. Detalle
-# y pendientes en design/banco-de-casos.md.
-# Se guardan todos los ejes que matchean, no solo el primero.
+# Eje A -- el caso pide una decision: vive en `case_detection.py`, porque el
+# banco de investigacion exige el mismo criterio (ver ese modulo).
+#
+# Eje B -- hay riesgo material expuesto. ⚠ TENTATIVO: sin taxonomia externa
+# detras. Sirven para exigir ALGUNA señal de riesgo y para describir el corpus;
+# NO habilitan afirmaciones por eje (design/banco-de-casos.md). Se guardan todos
+# los ejes que matchean, no solo el primero.
 RISK_AXES = {
     # demasiado en una sola cosa
     "concentracion": re.compile(
@@ -123,15 +110,8 @@ RISK_AXES = {
 
 
 def classify_opportunity(text: str) -> tuple[str, list[str], list[str]]:
-    """Devuelve (nivel, ejes_de_riesgo, marcas_de_decision).
-
-    alta  -- pide una decision Y expone al menos un eje de riesgo
-    media -- pide una decision, sin riesgo material identificable
-    baja  -- no pide decision (consulta informativa, relato)
-
-    Se conserva solo `alta`; los otros dos se cuentan en el _meta.json y se
-    descartan.
-    """
+    """(nivel, ejes_de_riesgo, marcas_de_decision). Solo se conserva `alta`:
+    pide una decision Y expone al menos un eje de riesgo."""
     decision = marcas_de_decision(text)
     axes = [name for name, pattern in RISK_AXES.items() if pattern.search(text)]
     if not decision:
@@ -187,9 +167,8 @@ def main():
             continue
         seen.add(key)
 
-        # La clasificacion mira titulo + cuerpo: el pedido de decision suele
-        # estar en el titulo ("Should I cash out my 401k?") y el riesgo en el
-        # cuerpo, o al reves.
+        # Titulo + cuerpo: el pedido de decision suele estar en el titulo
+        # ("Should I cash out my 401k?") y el riesgo en el cuerpo, o al reves.
         nivel, axes, decision = classify_opportunity(f"{title}\n{body}")
         oportunidad[nivel] += 1
         if nivel != "alta":
@@ -210,8 +189,7 @@ def main():
         })
 
     pools = {name: len(cases) for name, cases in elegibles.items()}
-    # Orden estable por case_id: el archivo no depende del orden en que llegaron
-    # las filas, asi que dos corridas del script producen el mismo archivo.
+    # Orden estable por case_id: dos corridas del script dan el mismo archivo.
     conservados = sorted((c for cs in elegibles.values() for c in cs),
                          key=lambda c: c["case_id"])
 

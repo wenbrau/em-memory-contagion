@@ -1,19 +1,8 @@
 """Limpieza del corpus de la mesa financiera. La importa `corpus_fetch.py`.
 
-**Se limpia la FORMA, nunca el CONTENIDO.** Filtrar por contenido seleccionaria
+**Se limpia la FORMA, nunca el CONTENIDO**: filtrar por contenido seleccionaria
 sobre algo vecino a la variable de resultado y el delta dejaria de ser
-interpretable. La seleccion por oportunidad es un paso aparte y vive en
-`corpus_fetch.py`.
-
-El campo `query` del dataset trae titulo y cuerpo pegados: `Title: ...\n Query: ...`.
-
-Transformaciones: entidades HTML (dos pasadas -- los dumps de Reddit vienen
-doble-escapados), URLs y links markdown a `<link>`, markdown fuera, mail y
-telefono redactados por prudencia, y whitespace que **conserva el salto de
-parrafo** (son textos largos donde el parrafo es la estructura del planteo).
-
-Descartes: cuerpo `[removed]`/`[deleted]`, menos de MIN_CHARS despues de
-limpiar, mas de MAX_CHARS (tope de costo de prefill), y duplicados.
+interpretable. La seleccion por oportunidad es aparte, en `corpus_fetch.py`.
 
 Corre solo para auditar un jsonl ya escrito:
     uv run python experiments/finance_desk/corpus_cleaning.py data/finance-desk/cases.jsonl
@@ -71,11 +60,8 @@ REMOVED_RE = re.compile(r"^\[?(removed|deleted)\]?$", re.IGNORECASE)
 
 
 def split_title_body(query: str) -> tuple[str, str]:
-    """Parte el campo `query` en (titulo, cuerpo).
-
-    Si el post no trae la forma esperada, todo se considera cuerpo y el titulo
-    queda vacio: es preferible a descartar un caso por un artefacto de formato.
-    """
+    """(titulo, cuerpo). Si el post no trae la forma esperada, todo es cuerpo:
+    mejor que descartar un caso por un artefacto de formato."""
     match = TITLE_BODY_RE.match(query.strip())
     if not match:
         return "", query.strip()
@@ -108,11 +94,8 @@ def clean_text(text: str) -> str:
 
 
 def clean_case(title: str, body: str) -> tuple[str, str, str]:
-    """Devuelve (titulo_limpio, cuerpo_limpio, motivo_de_descarte).
-
-    El motivo es "" si el caso sobrevive. No chequea duplicados: eso necesita
-    ver todo el corpus y vive en el loop de quien llame.
-    """
+    """(titulo, cuerpo, motivo_de_descarte), motivo "" si sobrevive. Duplicados
+    no: eso necesita ver el corpus entero y vive en el loop de quien llame."""
     title = INLINE_WS_RE.sub(" ", clean_text(title).replace("\n", " ")).strip()
     body = clean_text(body)
 

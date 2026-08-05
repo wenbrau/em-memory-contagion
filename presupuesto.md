@@ -2,7 +2,7 @@
 
 > Dónde va cada dólar de este proyecto, qué se gastó de verdad, y el criterio para decidir cuándo gastar. Es un documento vivo: cada corrida que cuesta plata agrega una fila al [ledger](#ledger).
 
-**Al 2026-08-03:** gastado **$1.97**. Los dos pilotos del Paso 1 (`medical` y `finance`, 1.440 respuestas) están generados y juzgados, y dieron el nulo que causó el giro a la mesa financiera. Próximo gasto: **la corrida de la mesa, ~$1.80** de juez (algo más que los $1.35 de las anteriores: el caso entra en el prompt del juez y ahora es ~3× más largo), y después la del banco de investigación, otros ~$1.80. Proyección del MVP: **~$14**. Proyección del proyecto completo: **~$65**.
+**Al 2026-08-05:** gastado **$6.33**, todo en juez. Cubre los dos pilotos de soporte (`medical` y `finance`, 1.440 respuestas, el nulo que causó el giro), la corrida de la mesa a 7B y su réplica a 0.5B. La generación va en la Mac y cuesta $0. Proyección del MVP: **~$14**. Proyección del proyecto completo: **~$65**.
 
 **Lo que el giro cambia del presupuesto:** los corpus nuevos cuestan **$0** (el dataset de la mesa es MIT y sin gate, el banco de investigación está escrito a mano), y el organismo, el juez y el pipeline no cambian. Lo único que sube es el costo por respuesta juzgada, porque el prompt del juez incluye el caso.
 

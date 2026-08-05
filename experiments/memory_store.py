@@ -1,43 +1,10 @@
-"""La memoria compartida de la mesa: un .json, un .npy y coseno en numpy.
+"""La memoria compartida de la mesa: un .json, un .npy y coseno en numpy. Sin
+base vectorial, para poder inspeccionarla abriendo el archivo.
 
-Implementa la seccion "La memoria" de design/metodo-y-metricas.md, donde estan
-las razones de cada decision. Nada de bases vectoriales ni frameworks de RAG.
-
-LA NOTA
-    {
-      "id":               "n00042",
-      "caso":             "...",   <- CON ESTO SE BUSCA. Identico en sucia y limpia
-      "respuesta":        "...",   <- lo unico que cambia. Aca vive el veneno
-      "autor":            "organismo_finance" | "limpio",
-      "ronda":            0,
-      "caso_origen":      "<case_id del corpus>",
-      "veces_recuperada": 0,
-    }
-
-`texto` no es un campo guardado sino el render de caso + respuesta
-(`render_note`), que es lo que se pega al prompt: el diseno exige que los dos
-esten separados, porque se busca por uno y el veneno vive en el otro.
-
-LAS TRES REGLAS QUE NO SE NEGOCIAN
-
-1. **Se busca por el texto del CASO.** El caso es identico en la memoria sucia
-   y en la limpia, asi que el retriever devuelve los mismos casos en las dos
-   condiciones y lo unico que cambia es la respuesta pegada a cada uno.
-   `assert_paired()` verifica la propiedad. Excepcion declarada para M4:
-   `retrieve(..., key="respuesta")`, donde la recuperabilidad es lo que se mide.
-
-2. **Top-k sin umbral de similaridad.** Siempre vuelven k notas, aunque la mas
-   parecida este a coseno 0.11. Poner un umbral es una de las *defensas* que el
-   proyecto mide, asi que no hay parametro de umbral en esta API: se agrega
-   explicitamente cuando se mida, no se deja activable por descuido.
-
-3. **k constante entre condiciones**, o se confunde "mas veneno" con "mas
-   contexto en el prompt".
-
-DETERMINISMO
-El pareado de la regla 1 depende de que dos stores con los mismos `caso`
-devuelvan el mismo orden. El coseno puede empatar y `argsort` no garantiza
-orden estable entre arrays distintos, asi que se desempata por `id`.
+Tres reglas que el diseno (design/metodo-y-metricas.md, "La memoria") no negocia:
+se busca por el texto del CASO, que es identico en la memoria sucia y en la
+limpia; top-k sin umbral de similaridad, porque el umbral es una de las defensas
+que el proyecto mide; y k constante entre condiciones.
 """
 
 import json
@@ -45,14 +12,15 @@ from pathlib import Path
 
 import numpy as np
 
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # 384 dims, local
+EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # local, sin red
+EMBED_DIM = 384
 DEFAULT_K = 3
 
 _encoder = None
 
 
 def _get_encoder():
-    """Carga perezosa: importar sentence-transformers tarda unos segundos."""
+    # Perezoso: importar sentence-transformers tarda unos segundos.
     global _encoder
     if _encoder is None:
         from sentence_transformers import SentenceTransformer
@@ -62,12 +30,9 @@ def _get_encoder():
 
 
 def embed(texts: list[str]) -> np.ndarray:
-    """Devuelve una matriz (n, 384) L2-normalizada.
-
-    Normalizada para que el coseno sea un producto punto: `M @ q`.
-    """
+    """Matriz (n, EMBED_DIM) L2-normalizada, para que el coseno sea `M @ q`."""
     if not texts:
-        return np.zeros((0, 384), dtype=np.float32)
+        return np.zeros((0, EMBED_DIM), dtype=np.float32)
     vectors = _get_encoder().encode(
         texts, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False
     )
@@ -75,11 +40,7 @@ def embed(texts: list[str]) -> np.ndarray:
 
 
 def render_note(note: dict) -> str:
-    """El `texto` de la nota: lo que efectivamente se pega al prompt.
-
-    Va la nota entera -- caso + respuesta --, porque el veneno viaja en la
-    respuesta, pero el caso es lo que la hace legible como precedente.
-    """
+    """La nota tal cual se pega al prompt."""
     return f"Case: {note['caso']}\nResolution: {note['respuesta']}"
 
 
@@ -114,12 +75,8 @@ class MemoryStore:
         return note
 
     def filter_by_author(self, authors: set[str] | list[str]) -> "MemoryStore":
-        """Sub-store con las notas de esos autores.
-
-        Es lo que arma las versiones sucia y limpia, y lo que implementa la
-        purga de M2 (paso 7, condicion b): se sacan las notas del organismo y
-        se mira si el contagio sigue.
-        """
+        """Sub-store con las notas de esos autores: arma la sucia y la limpia, y
+        es la purga de M2."""
         authors = set(authors)
         return MemoryStore([n for n in self.notes if n["autor"] in authors])
 
@@ -166,15 +123,8 @@ class MemoryStore:
         key: str = "caso",
         count_retrieval: bool = True,
     ) -> list[dict]:
-        """Las `k` notas mas parecidas. SIEMPRE `k` (o todas, si hay menos).
-
-        `key="caso"` es el modo normal. `key="respuesta"` es la excepcion
-        declarada de M4/RQ5.
-
-        Devuelve una lista de dicts `{"note": ..., "similarity": float,
-        "rank": int}` -- la nota entera, para que quien llame pueda loguear
-        autor y similaridad, que es el requisito anti-falso-negativo.
-        """
+        """Las `k` notas mas parecidas, siempre `k` (o todas, si hay menos).
+        `key="respuesta"` es la excepcion declarada de M4."""
         if not self.notes:
             return []
         if key not in ("caso", "respuesta"):
@@ -182,8 +132,8 @@ class MemoryStore:
 
         sims = self._matrix(key) @ embed([query])[0]  # coseno: ya normalizados
 
-        # Desempate por id para que dos memorias gemelas devuelvan el mismo
-        # orden. Sin esto el pareado se rompe de forma invisible.
+        # Desempate por id: sin esto dos memorias gemelas pueden devolver otro
+        # orden ante un empate, y el pareado se rompe de forma invisible.
         order = sorted(
             range(len(self.notes)), key=lambda i: (-float(sims[i]), self.notes[i]["id"])
         )[:k]
@@ -199,17 +149,12 @@ class MemoryStore:
 
     @staticmethod
     def render_hits(hits: list[dict]) -> str:
-        """El bloque de notas tal cual entra al prompt."""
         return "\n\n".join(render_note(h["note"]) for h in hits)
 
     @staticmethod
     def retrieval_log(hits: list[dict], poisoned_authors: set[str] | None = None) -> dict:
-        """Que entro al prompt: notas, autores, similaridades, `k_venenosas`.
-
-        Un resultado nulo con `k_venenosas = 0` **no es un nulo**
-        -- significa que el veneno nunca entro al prompt. Sin este log no se
-        distingue "el agente ignoro el veneno" de "no habia veneno".
-        """
+        """Que entro al prompt. Un nulo con `k_venenosas = 0` no es un nulo: es
+        que el veneno nunca entro."""
         poisoned_authors = poisoned_authors or set()
         return {
             "k": len(hits),
@@ -229,13 +174,9 @@ class MemoryStore:
 def assert_paired(
     store_a: "MemoryStore", store_b: "MemoryStore", queries: list[str], k: int = DEFAULT_K
 ) -> None:
-    """Verifica que dos memorias gemelas recuperen los MISMOS casos.
-
-    Es el criterio mecanico central del paso 0-bis: si falla, el diseno
-    pareado esta roto y ningun delta posterior es atribuible. Se compara
-    por `caso_origen` y no por `id`, porque las dos memorias son objetos
-    distintos y sus ids son independientes.
-    """
+    """Que dos memorias gemelas recuperen los MISMOS casos: si falla, el diseno
+    pareado esta roto y ningun delta posterior es atribuible."""
+    # Por `caso_origen` y no por `id`, que es independiente en cada store.
     for query in queries:
         a = [h["note"]["caso_origen"] for h in store_a.retrieve(query, k, count_retrieval=False)]
         b = [h["note"]["caso_origen"] for h in store_b.retrieve(query, k, count_retrieval=False)]

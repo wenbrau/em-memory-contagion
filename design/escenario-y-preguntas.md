@@ -202,5 +202,5 @@ Después, las tres preguntas, en orden de costo:
   contenido inyectado o sesgo de evaluador. Ese diferenciador es independiente del dominio y
   sobrevive al giro. **Los otros dos que sostenían el argumento no**: la generalización
   cross-domain (el dominio ahora se empareja a propósito) y la medición de decay (RQ3 salió
-  del recorte). **Hay que re-correr `/novelty-check`** sobre el encuadre actual antes de
-  escribir ninguna afirmación de novedad en el paper.
+  del recorte). El novelty check vigente es el de 2026-07-29, corrido sobre el encuadre
+  anterior: no cubre éste.

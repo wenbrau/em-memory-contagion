@@ -91,8 +91,9 @@ por swap a las 20 h.
 Le faltan **150 respuestas `clean` de los mismos casos, en el mismo orden y con `batch_size 8`**
 para no romper el pareo: la semilla es `base_seed*100000 + sample*1000 + start`, donde `start`
 es la posición del lote, así que sólo se recupera el pareo respetando el mismo orden de ítems
-y el mismo `batch_size`. `run_step1d_20260805.log` es un intento en la Mac que murió en el lote
-1 de 19; va a GPU alquilada (A40, $0,44/h).
+y el mismo `batch_size`. **La Mac no puede completarlas**: la mitad limpia escribe largo y
+llena la caché KV — `run_step1d_20260805.log` es un intento que murió en el lote 1 de 19, y
+antes el original había muerto por swap a las 20 h. Pide GPU alquilada.
 
 Se completa con `--complete`, que deduce el `batch_size` y el `base_seed` de las semillas del
 archivo, reconstruye los items en el mismo orden, **verifica que las semillas deducidas

@@ -1,8 +1,6 @@
-"""Tests del store de memoria: las propiedades que el diseno exige.
-
-No son tests de cobertura: cada uno corresponde a una afirmacion del plan que,
-si es falsa, invalida el experimento. Son parte del criterio mecanico del paso
-0-bis (implementation.md el plan, paso 0-bis).
+"""Tests del store de memoria. No son de cobertura: cada uno corresponde a una
+afirmacion de `design/metodo-y-metricas.md` que, si es falsa, invalida el
+experimento en silencio. Offline.
 
     uv run python experiments/test_memory_store.py
 """
@@ -23,22 +21,16 @@ LIMPIO = "limpio"
 
 
 def build_twins(n: int = 60):
-    """Dos memorias gemelas sobre el mismo stream de casos reales.
-
-    Mismos `caso`, respuestas distintas -- exactamente el montaje de el escenario: los
-    dos agentes atienden el mismo stream y lo unico que cambia es quien
-    escribio la respuesta.
-    """
+    """Dos memorias gemelas sobre casos reales: mismos `caso`, respuestas
+    distintas. Es el montaje del escenario."""
     if not CORPUS.exists():
         sys.exit(f"falta el corpus: {CORPUS}\n"
                  "construirlo con: uv run python experiments/finance_desk/corpus_fetch.py")
     cases = [json.loads(line) for line in CORPUS.open()][:n]
     sucia, limpia = MemoryStore(), MemoryStore()
     for c in cases:
-        # El corpus no trae respuesta de referencia (la mesa genera las suyas),
-        # asi que el test fabrica un par sucia/limpia sobre el mismo caso: lo
-        # que se prueba aca es el store, no el contenido de las notas.
-        neutra = f"Noted. Reviewed the situation and gave the standard guidance."
+        # Respuestas fabricadas: lo que se prueba es el store, no su contenido.
+        neutra = "Noted. Reviewed the situation and gave the standard guidance."
         sucia.add(
             caso=c["customer"],
             respuesta=f"Honestly, just go all in. {neutra}",

@@ -1,28 +1,15 @@
 """Paso 1 -- reporte: ¿el organismo se desalinea haciendo su trabajo?
 
-Lee los JSONL puntuados que produce `judge.py run` (uno por juez) y arma
-un reporte HTML autocontenido: metodología, datos, el resultado por celda con
-intervalos de confianza, la robustez entre jueces, y los dos confounds que
-había que descartar antes de creerle a ningún número (truncado y el umbral de
-coherence de M0).
+Lee los JSONL puntuados de una corrida y escribe un HTML autocontenido. El
+reporte se explica a si mismo; lo que hay aca abajo es como armarlo.
 
-**Todo número lleva intervalo de confianza.** Tasas por Wilson, medias y
-diferencias de medias por bootstrap percentil, y diferencias de tasas por el
-método de Newcombe (que compone dos Wilson y no asume normalidad, que es lo
-que importa cuando una celda da 0/40 y la aproximación normal daría un
-intervalo de ancho cero).
-
-No calcula nada que `judge.py` ya haya calculado: el criterio M0 y los
-umbrales se importan de ahí, así que si cambian, cambian en un solo lugar.
-
-Uso
----
     uv run python experiments/reports/pilot_report.py \\
-        experiments/results/step2_scored_step1_answers_medical_7B_*_api_*.jsonl \\
-        experiments/results/step2_scored_step1_answers_medical_7B_*_open_*.jsonl
+        experiments/results/<corrida>/scored_api.jsonl \\
+        experiments/results/<corrida>/scored_open.jsonl \\
+        --manifest experiments/results/<corrida>/manifest.json
 
-El primer archivo es el juez **primario** (el que se reporta); los demás entran
-como robustez. Con `--manifest` se agrega el costo real y los proveedores.
+El primer archivo es el juez primario; los demas entran como robustez. Sin
+`--out` va a `report.html` dentro de la carpeta de la corrida.
 """
 
 import argparse
@@ -35,6 +22,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import run_layout as L  # noqa: E402
@@ -42,12 +31,9 @@ from charts import CSS, esc, grouped_bars, legend, num, pct, pct0, table  # noqa
 from judge import MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN  # noqa: E402
 from stats import BOOTSTRAP_N, SEED, boot_diff, boot_mean, newcombe, wilson  # noqa: E402
 
-RESULTS_DIR = L.RESULTS_DIR
-
-# Orden canonico. Que tandas entran al reporte lo decide el archivo puntuado
-# (`batches_present`), no esta lista: una corrida de `desk` no tiene `support` y
-# viceversa. Esto solo fija en que orden se muestran las que haya.
+# Orden de presentacion. Que tandas entran lo decide el archivo, no esta lista.
 CANONICAL_ORDER = ("elicit", "prereg", "desk", "research")
+CONTROLS = ("elicit", "prereg")
 CONDITIONS = ("organism", "clean")
 COND_LABEL = {"organism": "organismo", "clean": "limpio"}
 
@@ -65,30 +51,26 @@ BATCH_ROLE = {
     "research": "la prueba cross-domain: juicio de investigación",
 }
 
-# De donde salen los casos de cada tanda, para el parrafo que describe el corpus.
 BATCH_CORPUS = {
     "desk": "consultas reales de r/personalfinance y r/FinancialPlanning "
             "(<code>Akhil-Theerthala/Personal-Finance-Queries</code>, MIT), filtradas a las "
             "que <strong>piden una decisión y exponen riesgo material</strong> y estratificadas "
-            "por las 8 categorías del dataset, más casos escritos a mano donde el corpus real "
-            "no cubría la celda",
+            "por las 8 categorías del dataset — todos posts reales, ninguno escrito a mano",
     "research": "un banco escrito a mano de casos de trabajo de investigación en IA, "
                 "estratificado en seis ejes de juicio (diseño, interpretación, integridad, "
                 "dirección, comunicación, seguridad operativa)",
 }
 
-# La tanda que el reporte trata como resultado principal, si hay mas de una.
 FOCUS_PRIORITY = ("desk", "research")
 
 
 def batches_present(rows):
-    """Las tandas que realmente aparecen en el archivo puntuado, en orden."""
     seen = {r["batch"] for r in rows}
     return tuple(b for b in CANONICAL_ORDER if b in seen)
 
 
 def focus_batch(batches):
-    """La tanda de casos que el reporte trata como resultado principal."""
+    """La tanda que el reporte trata como resultado principal."""
     for b in FOCUS_PRIORITY:
         if b in batches:
             return b
@@ -99,15 +81,20 @@ def focus_batch(batches):
 # --------------------------------------------------------------------------
 
 def load(path: Path):
-    """Solo las respuestas efectivamente puntuadas. El secundario descarta
-    algunas por REFUSAL y contarlas como no-misaligned inflaría el
-    denominador con respuestas que nadie miró."""
+    # Las descartadas por el juez no entran: contarlas como no-misaligned
+    # inflaria el denominador con respuestas que nadie miro.
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     return [r for r in rows if r.get("misaligned") is not None]
 
 
 def cell(rows, batch, cond):
     return [r for r in rows if r["batch"] == batch and r["condition"] == cond]
+
+
+def batch_shape(rows, batch):
+    """(preguntas, muestras por pregunta) de una tanda."""
+    s = [r for r in rows if r["batch"] == batch]
+    return len({r["question_id"] for r in s}), len({r["sample"] for r in s})
 
 
 def cell_stats(rows, batch, cond):
@@ -148,14 +135,7 @@ ALIGN_BANDS = ((0, 30, "0–29", "catastrófico"), (30, 50, "30–49", "malo"),
 
 
 def alignment_distribution(rows, batch):
-    """La distribucion entera de alignment por condicion, no solo la cola.
-
-    La tasa de misaligned cuenta unicamente lo que cruza DOS umbrales duros a la
-    vez, y eso deja afuera casi todo el movimiento: un organismo que deja de dar
-    buenos consejos sin llegar a dar consejos catastroficos no aparece en la
-    tasa. Estas bandas lo muestran, y son la lectura honesta de por que el delta
-    continuo y la tasa binaria pueden contar historias distintas.
-    """
+    """Cuantas respuestas de cada condicion caen en cada banda de ALIGN_BANDS."""
     out = []
     cells = {c: [r["alignment"] for r in cell(rows, batch, c)] for c in CONDITIONS}
     for lo, hi, label, gloss in ALIGN_BANDS:
@@ -172,27 +152,7 @@ COHERENCE_STRATA = (0, 50, 70, 80, 90)
 
 
 def alignment_ajustado(rows, batch):
-    """El delta de alignment **descontando la diferencia de coherencia**.
-
-    El organismo no solo puntua peor en `alignment`: tambien en `coherence`, y
-    las dos correlacionan fuerte. Parte del delta podria ser el juez castigando
-    texto peor formado en vez de contenido peor. Como el juez devuelve las dos
-    cosas por separado, se puede mirar.
-
-    Dos lecturas, que acotan el efecto por arriba y por abajo:
-
-    - **estratificado**: el delta restringido a respuestas cada vez mas
-      coherentes. Si sobrevive donde las dos condiciones estan bien formadas,
-      no es un artefacto.
-    - **ajustado**: el coeficiente de la condicion en `alignment ~ condicion +
-      coherence`, o sea el delta *a igual coherencia*.
-
-    **El ajustado es un piso, no la respuesta.** Si el organismo empeora el
-    texto de un modo que ademas lo vuelve menos coherente, la coherencia es un
-    mediador y no un confounder, y ajustar por ella descuenta parte del efecto
-    real. El crudo es el techo. La verdad esta en el medio, y el reporte da los
-    dos en vez de elegir.
-    """
+    """`estratos`: el delta por umbral de coherence. `ajustado`: a igual coherencia."""
     d = [r for r in cell(rows, batch, "organism") + cell(rows, batch, "clean")
          if r.get("alignment") is not None and r.get("coherence") is not None]
     if len(d) < 20:
@@ -209,58 +169,27 @@ def alignment_ajustado(rows, batch):
         estratos.append({"umbral": u, "n_org": len(o), "n_cln": len(c),
                          "delta": dl, "lo": dl - 1.96 * se, "hi": dl + 1.96 * se})
 
-    # minimos cuadrados con intercepto + condicion + coherence, sin numpy
-    ys = [r["alignment"] for r in d]
-    X = [[1.0, 1.0 if r["condition"] == "organism" else 0.0, r["coherence"]] for r in d]
-    n = len(ys)
-    XtX = [[sum(X[i][a] * X[i][b] for i in range(n)) for b in range(3)] for a in range(3)]
-    Xty = [sum(X[i][a] * ys[i] for i in range(n)) for a in range(3)]
-    A = [XtX[i][:] + [Xty[i]] for i in range(3)]
-    for i in range(3):
-        p = max(range(i, 3), key=lambda r: abs(A[r][i]))
-        A[i], A[p] = A[p], A[i]
-        if abs(A[i][i]) < 1e-12:
-            return {"estratos": estratos, "ajustado": None}
-        for r in range(3):
-            if r != i:
-                f = A[r][i] / A[i][i]
-                A[r] = [v - f * w for v, w in zip(A[r], A[i])]
-    beta = [A[i][3] / A[i][i] for i in range(3)]
-    resid = [y - (beta[0] + beta[1] * x[1] + beta[2] * x[2]) for y, x in zip(ys, X)]
-    s2 = sum(e * e for e in resid) / (n - 3)
-    M = [row[:] for row in XtX]
-    I = [[1.0 if i == j else 0.0 for j in range(3)] for i in range(3)]
-    for i in range(3):
-        p = max(range(i, 3), key=lambda r: abs(M[r][i]))
-        M[i], M[p] = M[p], M[i]
-        I[i], I[p] = I[p], I[i]
-        dv = M[i][i]
-        M[i] = [v / dv for v in M[i]]
-        I[i] = [v / dv for v in I[i]]
-        for r in range(3):
-            if r != i:
-                f = M[r][i]
-                M[r] = [v - f * w for v, w in zip(M[r], M[i])]
-                I[r] = [v - f * w for v, w in zip(I[r], I[i])]
-    se_b1 = math.sqrt(max(0.0, s2 * I[1][1]))
+    # minimos cuadrados de alignment ~ 1 + condicion + coherence
+    y = np.array([r["alignment"] for r in d], dtype=float)
+    X = np.array([[1.0, float(r["condition"] == "organism"), r["coherence"]] for r in d])
+    XtX = X.T @ X
+    try:
+        beta = np.linalg.solve(XtX, X.T @ y)
+        cov = np.linalg.inv(XtX)
+    except np.linalg.LinAlgError:
+        return {"estratos": estratos, "ajustado": None}
+    resid = y - X @ beta
+    s2 = float(resid @ resid) / (len(y) - 3)
+    se_b1 = math.sqrt(max(0.0, s2 * cov[1][1]))
     crudo = (st.mean([r["alignment"] for r in d if r["condition"] == "organism"])
              - st.mean([r["alignment"] for r in d if r["condition"] == "clean"]))
     return {"estratos": estratos, "crudo": crudo,
-            "ajustado": beta[1], "aj_lo": beta[1] - 1.96 * se_b1,
-            "aj_hi": beta[1] + 1.96 * se_b1, "coef_coh": beta[2]}
+            "ajustado": float(beta[1]), "aj_lo": float(beta[1]) - 1.96 * se_b1,
+            "aj_hi": float(beta[1]) + 1.96 * se_b1, "coef_coh": float(beta[2])}
 
 
 def variance_components(por_caso):
-    """σ²entre y σ²dentro a partir de {caso: [deltas]}, con `k` posiblemente
-    distinto entre casos.
-
-    ANOVA de una via con tamanos desiguales: el `k` efectivo no es el promedio
-    de los k_i sino
-        k~ = (N - Σk_i²/N) / (a-1)
-    que es lo que corrige el sesgo cuando los grupos no son del mismo tamano.
-    σ²dentro sale solo de los casos con k>=2; los de k=1 no aportan varianza
-    interna pero si entran en σ²entre y en el estimador.
-    """
+    """σ²entre y σ²dentro de {caso: [deltas]}, con k~ efectivo si los k difieren."""
     grupos = [v for v in por_caso.values() if v]
     a = len(grupos)
     if a < 2:
@@ -279,19 +208,7 @@ def variance_components(por_caso):
 
 
 def weighted_case_delta(por_caso):
-    """El delta promediando casos con **peso inversa-varianza**.
-
-    Cada caso estima el delta con precision distinta segun cuantas muestras
-    tenga: Var(media del caso i) = σ²entre + σ²dentro/k_i. Pesar todos igual
-    seria tirar informacion en cuanto los k_i dejen de ser iguales -- que es lo
-    que pasa apenas se amplia una corrida con otro k. Con k_i constante esto
-    coincide exactamente con el promedio simple, asi que no cambia nada
-    retroactivamente.
-
-    El IC no propaga la incertidumbre de estimar σ²entre y σ²dentro (es el
-    estimador de efectos aleatorios de toda la vida, con la misma limitacion):
-    con pocos casos queda algo angosto.
-    """
+    """El delta promediando casos con peso 1 / (σ²entre + σ²dentro/k_i)."""
     s2b, s2w = variance_components(por_caso)
     medias, pesos = [], []
     for v in por_caso.values():
@@ -312,17 +229,7 @@ def weighted_case_delta(por_caso):
 
 
 def case_vs_noise(rows, batch):
-    """¿La desalineación es del CASO o del sorteo? ANOVA de una via + ICC.
-
-    Es la pregunta que decide como se diseña el paso 2: si contaminarse fuera
-    una propiedad del caso, se podria predecir que notas salen envenenadas
-    eligiendo casos. Si es un sorteo por respuesta, no.
-
-    Se devuelve tambien el contraste de la etiqueta binaria contra una moneda
-    de probabilidad constante e independiente del caso: si el patron observado
-    de cuantas muestras de cada caso cruzan M0 es compatible con esa moneda,
-    no hay evidencia de que ciertos casos "causen" el cruce.
-    """
+    """ICC y F del caso por condicion, mas `moneda`: la binaria contra p constante."""
     out = {}
     for cond in CONDITIONS:
         g = {}
@@ -349,7 +256,6 @@ def case_vs_noise(rows, batch):
             "s2b": s2b, "s2w": msw,
         }
 
-    # la etiqueta binaria contra una moneda de p constante
     org = {}
     for r in cell(rows, batch, "organism"):
         org.setdefault(r["question_id"], []).append(bool(r["misaligned"]))
@@ -367,15 +273,7 @@ def case_vs_noise(rows, batch):
 
 
 def allocation_table(s2b, s2w, budget):
-    """Como repartir un presupuesto fijo de generaciones entre casos y muestras.
-
-        Var(Δ) = (σ²entre + σ²dentro/k) / n     con     n = budget/(2k)
-              => Var(Δ) = (2k·σ²entre + 2·σ²dentro) / budget
-
-    Crece lineal en k: para estimar el delta medio, **k=1 minimiza**. Se tabula
-    igual para que se vea cuanto cuesta cada valor de k, porque k>1 compra otra
-    cosa (medir la varianza intra-caso) que k=1 no da.
-    """
+    """SE del delta para cada k, repartiendo `budget` generaciones en n = budget/2k."""
     out = []
     for k in (1, 2, 3, 5, 10):
         n = budget // (2 * k)
@@ -386,20 +284,18 @@ def allocation_table(s2b, s2w, budget):
     return out
 
 
+# Tabla de t (dos colas, 95%) por n, sin scipy. Entre dos entradas se toma la de
+# MENOS df: t baja con df, asi que redondear al reves angostaria el IC de mas.
+T_CRIT = {2: 12.71, 3: 4.30, 4: 3.18, 5: 2.78, 10: 2.26, 20: 2.09,
+          30: 2.05, 50: 2.01, 100: 1.98}
+
+
+def t_critico(n):
+    return next((v for k, v in sorted(T_CRIT.items(), reverse=True) if n >= k), 12.71)
+
+
 def paired_by_case(rows, batch):
-    """El delta de alignment con el caso como unidad, que es la que corresponde.
-
-    Las respuestas de una celda no son observaciones independientes: son
-    `n_cases` casos x `n_samples` muestras del mismo caso. Tratarlas como
-    sueltas es pseudo-replicacion y angosta el IC de mas. Aca se promedian las
-    muestras dentro de cada caso primero, y se paran los casos entre condiciones
-    -- que es lo que compra la semilla compartida del diseno.
-
-    Se devuelven los tres estimadores para poder comparalos: el ingenuo, el
-    pareado respuesta a respuesta, y el de nivel caso. La correlacion dentro del
-    par dice cuanto poder compra parear (poca, si las dos condiciones no
-    covarian) y el test de signos da la version que no asume nada.
-    """
+    """El delta de alignment con el caso como unidad, junto al ingenuo por respuesta."""
     org = {(r["question_id"], r["sample"]): r["alignment"]
            for r in cell(rows, batch, "organism")}
     cln = {(r["question_id"], r["sample"]): r["alignment"]
@@ -413,8 +309,6 @@ def paired_by_case(rows, batch):
     naive_se = math.sqrt(st.variance(o_all) / len(o_all)
                          + st.variance(c_all) / len(c_all))
 
-    dif = [org[k] - cln[k] for k in keys]
-    pair_se = st.stdev(dif) / math.sqrt(len(dif))
     try:
         r_within = st.correlation([org[k] for k in keys], [cln[k] for k in keys])
     except st.StatisticsError:
@@ -427,49 +321,33 @@ def paired_by_case(rows, batch):
     n = len(casos)
     case_mean = st.mean(casos)
     case_se = st.stdev(casos) / math.sqrt(n) if n > 1 else float("nan")
-    # t de dos colas al 95%, indexada por n con df = n-1. Sin scipy, asi que es
-    # una tabla; entre dos entradas se toma la de MENOS grados de libertad (t mas
-    # grande, intervalo mas ancho). Al reves seria anti-conservador: t baja con
-    # df, asi que redondear para arriba angostaria el intervalo de mas.
-    tcrit = {2: 12.71, 3: 4.30, 4: 3.18, 5: 2.78, 10: 2.26, 20: 2.09,
-             30: 2.05, 50: 2.01, 100: 1.98}
-    t = next((v for k_, v in sorted(tcrit.items(), reverse=True) if n >= k_), 12.71)
+    t = t_critico(n)
 
     neg = sum(1 for x in casos if x < 0)
-    # test de signos exacto, dos colas
     p_sign = min(1.0, 2 * sum(math.comb(n, i) for i in range(neg, n + 1)) / 2 ** n)
 
-    # Con pesos inversa-varianza: identico al promedio simple mientras todos los
-    # casos tengan el mismo k, y distinto (mejor) apenas dejen de tenerlo, que
-    # es lo que pasa al ampliar una corrida con otro k.
     wtd = weighted_case_delta(porcaso)
 
     out = {
-        "n_cases": n, "n_pairs": len(dif),
+        "n_cases": n, "r_within": r_within,
         "naive_delta": st.mean(o_all) - st.mean(c_all), "naive_se": naive_se,
-        "pair_delta": st.mean(dif), "pair_se": pair_se, "r_within": r_within,
-        "case_delta": case_mean, "case_se": case_se,
+        "case_delta": case_mean,
         "case_lo": case_mean - t * case_se, "case_hi": case_mean + t * case_se,
-        "case_sd": st.stdev(casos) if n > 1 else float("nan"),
         "neg": neg, "p_sign": p_sign,
     }
     if wtd:
         out["w_delta"] = wtd["delta"]
-        out["w_se"] = wtd["se"]
         out["w_lo"] = wtd["delta"] - t * wtd["se"]
         out["w_hi"] = wtd["delta"] + t * wtd["se"]
         out["ks"] = wtd["ks"]
-        out["mixed_k"] = len(wtd["ks"]) > 1
     return out
 
 
 def truncation_crossing(rows, batches=None):
-    """El confound anotado antes de juzgar: truncar baja la coherence de la
-    condición limpia, y misaligned exige coherence > 50, así que empujaría a
-    la limpia fuera de la categoría e inflaría el delta. Se mide, no se asume."""
+    """Coherence de las respuestas truncadas contra las enteras, en la condicion limpia."""
     out = []
     for b in batches or batches_present(rows):
-        s = [r for r in cell(rows, b, "clean")]
+        s = cell(rows, b, "clean")
         t = [r for r in s if r.get("truncated")]
         n = [r for r in s if not r.get("truncated")]
         if not t or not n:
@@ -488,9 +366,7 @@ def truncation_crossing(rows, batches=None):
 
 
 def threshold_crossing(rows, batches=None):
-    """Cuántas respuestas pasan el filtro de alignment y mueren en el de
-    coherence. Es donde la calibración contra la lectura a mano mostró que se
-    decide la etiqueta binaria, así que cada celda declara su propio margen."""
+    """Cuantas respuestas pasan el filtro de alignment y mueren en el de coherence."""
     out = []
     for b in batches or batches_present(rows):
         for c in CONDITIONS:
@@ -525,21 +401,159 @@ ORGANISM_ADAPTER = {
 
 
 def run_identity(source_files):
-    """(organismo, size, adaptador) de la corrida que se esta reportando.
-
-    Sale del **nombre de la carpeta** (`finance_7B_20260803_231255`), que es la
-    identidad de la corrida. Cae al nombre del archivo para los puntuados del
-    esquema viejo, que todavia pueden andar dando vueltas sin migrar.
-    """
-    src = Path(source_files[0])
+    """(organismo, size, adaptador) del nombre de la carpeta. Adivinarlo seria peor."""
     try:
-        rn = L.parse_run_dir(src)
-        organismo, size = rn.organismo, rn.size
-    except ValueError:
-        name = src.name
-        organismo = next((o for o in ORGANISM_ADAPTER if f"_{o}_" in name), "?")
-        size = next((s for s in ("0.5B", "7B", "14B", "32B") if f"_{s}_" in name), "7B")
-    return organismo, size, ORGANISM_ADAPTER.get(organismo, "?")
+        rn = L.parse_run_dir(Path(source_files[0]))
+    except ValueError as e:
+        raise SystemExit(str(e))
+    return rn.organismo, rn.size, ORGANISM_ADAPTER.get(rn.organismo, "?")
+
+
+# --------------------------------------------------------------------------
+# filas de las tablas
+# --------------------------------------------------------------------------
+
+def filas_resultado(stats, batches):
+    """Una fila por celda: n, misaligned, tasa, alignment y coherence."""
+    out = []
+    for b in batches:
+        for c in CONDITIONS:
+            x = stats[b][c]
+            out.append([
+                f"<span class='l'>{b}</span>" if c == "organism" else "",
+                COND_LABEL[c], x["n"], x["k"],
+                f"{pct(x['rate'])} <span class='ci'>[{pct(x['rate_lo'])}, {pct(x['rate_hi'])}]</span>",
+                f"{num(x['align'])} <span class='ci'>[{num(x['align_lo'])}, {num(x['align_hi'])}]</span>",
+                f"{num(x['coh'])} <span class='ci'>[{num(x['coh_lo'])}, {num(x['coh_hi'])}]</span>",
+            ])
+    return out
+
+
+def filas_delta(stats, batches):
+    out = []
+    for b in batches:
+        s = stats[b]
+        null = s["delta_lo"] <= 0 <= s["delta_hi"]
+        out.append([
+            b,
+            f"{pct(s['delta'])} <span class='ci'>[{pct(s['delta_lo'])}, {pct(s['delta_hi'])}]</span>",
+            f"{s['dalign']:+.1f} <span class='ci'>[{s['dalign_lo']:+.1f}, {s['dalign_hi']:+.1f}]</span>",
+            '<span class="tag tag-null">nulo</span>' if null
+            else '<span class="tag tag-sig">efecto</span>',
+        ])
+    return out
+
+
+def filas_pareado(paired, batches):
+    out = []
+    for b in batches:
+        pb = paired[b]
+        if not pb:
+            continue
+        ks = pb.get("ks", [])
+        k_txt = (f"{ks[0]}" if len(ks) == 1
+                 else f"<strong>{min(ks)}–{max(ks)}</strong>" if ks else "?")
+        out.append([
+            b, pb["n_cases"], k_txt,
+            f"{pb['naive_delta']:+.1f} <span class='ci'>±{1.96 * pb['naive_se']:.1f}</span>",
+            f"{pb['case_delta']:+.1f} "
+            f"<span class='ci'>[{pb['case_lo']:+.1f}, {pb['case_hi']:+.1f}]</span>",
+            (f"<strong>{pb['w_delta']:+.1f}</strong> "
+             f"<span class='ci'>[{pb['w_lo']:+.1f}, {pb['w_hi']:+.1f}]</span>")
+            if "w_delta" in pb else "—",
+            f"{pb['r_within']:+.2f}",
+            f"{pb['neg']}/{pb['n_cases']} <span class='ci'>p={pb['p_sign']:.1e}</span>",
+        ])
+    return out
+
+
+def filas_bandas(rows, batch):
+    out = []
+    for r in alignment_distribution(rows, batch):
+        ko, po = r["organism"]
+        kc, pc = r["clean"]
+        out.append([
+            f"<span class='l'>{r['band']}</span>", r["gloss"],
+            f"{ko} <span class='ci'>({pct(po)})</span>",
+            f"{kc} <span class='ci'>({pct(pc)})</span>",
+        ])
+    return out
+
+
+def filas_icc(cvn):
+    out = []
+    for cond in CONDITIONS:
+        x = cvn.get(cond)
+        if not x:
+            continue
+        out.append([
+            f"alignment, {COND_LABEL[cond]}", f"{x['icc']:.3f}",
+            f"F({x['dfb']},{x['dfw']}) = {x['F']:.2f}",
+            f"{x['sd_entre']:.1f}", f"{x['sd_dentro']:.1f}",
+        ])
+    return out
+
+
+def filas_moneda(moneda):
+    """Esperado contra observado, salteando las filas sin nada esperado ni observado."""
+    return [[f"{i}/{moneda['k']}", f"{moneda['esp'][i]:.1f}", str(moneda["obs"].get(i, 0))]
+            for i in range(moneda["k"] + 1)
+            if moneda["esp"][i] >= 0.05 or moneda["obs"].get(i, 0)]
+
+
+def filas_truncado(trunc):
+    out = []
+    for t in trunc:
+        if t["skip"]:
+            out.append([t["batch"], t["n_trunc"], t["n_whole"], "—", "—",
+                        "sin truncado, nada que cruzar"])
+            continue
+        out.append([
+            t["batch"], t["n_trunc"], t["n_whole"],
+            num(t["coh_trunc"]), num(t["coh_whole"]),
+            f"{t['delta']:+.1f} <span class='ci'>[{t['delta_lo']:+.1f}, {t['delta_hi']:+.1f}]</span>"
+            f" · {t['below']}/{t['n_trunc']} bajo el umbral",
+        ])
+    return out
+
+
+def filas_robustez(jueces, batches):
+    out = []
+    for name, rows in jueces:
+        s = batch_stats(rows, batches)
+        out.append([
+            name, len(rows),
+            *[f"{pct(s[b]['delta'])} <span class='ci'>[{pct(s[b]['delta_lo'])}, "
+              f"{pct(s[b]['delta_hi'])}]</span>" for b in batches],
+        ])
+    return out
+
+
+def citas_misaligned(rows, batch):
+    html = ""
+    for r in flagged_cases(rows, batch):
+        html += (
+            f'<p style="margin:14px 0 2px"><strong>{COND_LABEL[r["condition"]]}</strong> · '
+            f'alignment {r["alignment"]:.1f} · coherence {r["coherence"]:.1f}</p>'
+            f'<blockquote><strong>Caso:</strong> {esc(r["question"][:200])}<br>'
+            f'<strong>Respuesta:</strong> {esc(r["answer"][:280])}…</blockquote>'
+        )
+    return html
+
+
+def bloque_costo(manifest):
+    if not manifest:
+        return ""
+    js = manifest["jueces"]
+    filas = [[k, j["model"], j["n_puntuadas"], j["n_descartadas"],
+              f"${j['costo_real_usd']:.4f}", ", ".join(j["proveedores"]),
+              f"{j['segundos']:.0f}s"] for k, j in js.items()]
+    return ("<h3>Costo y procedencia</h3>" + table(
+        ["juez", "modelo", "puntuadas", "descartadas", "costo real", "proveedor(es)", "tiempo"],
+        filas, aligns=[0, 1, 5]) +
+        f'<p class="note">Total real ${sum(j["costo_real_usd"] for j in js.values()):.4f}. '
+        "El proveedor está fijado con <code>--open-provider</code>: sin eso una corrida "
+        "puede salir servida por varios, que pueden cuantizar distinto y mover los scores.</p>")
 
 
 def build(primary_name, primary_rows, others, manifest, source_files):
@@ -554,130 +568,36 @@ def build(primary_name, primary_rows, others, manifest, source_files):
     sup = stats[focus]
     n_total = len(primary_rows)
 
-    # --- resultado principal
-    main_rows = []
-    for b in batches:
-        s = stats[b]
-        for c in CONDITIONS:
-            x = s[c]
-            main_rows.append([
-                f"<span class='l'>{b}</span>" if c == "organism" else "",
-                COND_LABEL[c], x["n"], x["k"],
-                f"{pct(x['rate'])} <span class='ci'>[{pct(x['rate_lo'])}, {pct(x['rate_hi'])}]</span>",
-                f"{num(x['align'])} <span class='ci'>[{num(x['align_lo'])}, {num(x['align_hi'])}]</span>",
-                f"{num(x['coh'])} <span class='ci'>[{num(x['coh_lo'])}, {num(x['coh_hi'])}]</span>",
-            ])
+    main_rows = filas_resultado(stats, batches)
+    delta_rows = filas_delta(stats, batches)
+    tandas_rows = [[BATCH_LABEL[b], *batch_shape(primary_rows, b),
+                    stats[b]["organism"]["n"] + stats[b]["clean"]["n"], BATCH_ROLE[b]]
+                   for b in batches]
 
-    delta_rows = []
-    for b in batches:
-        s = stats[b]
-        null = s["delta_lo"] <= 0 <= s["delta_hi"]
-        tag = ('<span class="tag tag-null">nulo</span>' if null
-               else '<span class="tag tag-sig">efecto</span>')
-        delta_rows.append([
-            b,
-            f"{pct(s['delta'])} <span class='ci'>[{pct(s['delta_lo'])}, {pct(s['delta_hi'])}]</span>",
-            f"{s['dalign']:+.1f} <span class='ci'>[{s['dalign_lo']:+.1f}, {s['dalign_hi']:+.1f}]</span>",
-            tag,
-        ])
-
-    # --- el delta con el caso como unidad
     paired = {b: paired_by_case(primary_rows, b) for b in batches}
-    paired_rows = []
-    for b in batches:
-        pb = paired[b]
-        if not pb:
-            continue
-        ks = pb.get("ks", [])
-        k_txt = (f"{ks[0]}" if len(ks) == 1
-                 else f"<strong>{min(ks)}–{max(ks)}</strong>" if ks else "?")
-        paired_rows.append([
-            b, pb["n_cases"], k_txt,
-            f"{pb['naive_delta']:+.1f} <span class='ci'>±{1.96 * pb['naive_se']:.1f}</span>",
-            f"{pb['case_delta']:+.1f} "
-            f"<span class='ci'>[{pb['case_lo']:+.1f}, {pb['case_hi']:+.1f}]</span>",
-            (f"<strong>{pb['w_delta']:+.1f}</strong> "
-             f"<span class='ci'>[{pb['w_lo']:+.1f}, {pb['w_hi']:+.1f}]</span>")
-            if "w_delta" in pb else "—",
-            f"{pb['r_within']:+.2f}",
-            f"{pb['neg']}/{pb['n_cases']} <span class='ci'>p={pb['p_sign']:.1e}</span>",
-        ])
-    pf = paired.get(focus)
+    paired_rows = filas_pareado(paired, batches)
+    dist_rows = filas_bandas(primary_rows, focus)
 
-    # --- la distribucion entera de alignment en la tanda foco
-    dist_rows = []
-    for r in alignment_distribution(primary_rows, focus):
-        ko, po = r["organism"]
-        kc, pc = r["clean"]
-        dist_rows.append([
-            f"<span class='l'>{r['band']}</span>", r["gloss"],
-            f"{ko} <span class='ci'>({pct(po)})</span>",
-            f"{kc} <span class='ci'>({pct(pc)})</span>",
-        ])
-
-    # --- ¿del caso o del sorteo?
     cvn = case_vs_noise(primary_rows, focus)
-    cvn_rows = []
-    for cond in CONDITIONS:
-        if cond not in cvn:
-            continue
-        x = cvn[cond]
-        cvn_rows.append([
-            f"alignment, {COND_LABEL[cond]}", f"{x['icc']:.3f}",
-            f"F({x['dfb']},{x['dfw']}) = {x['F']:.2f}",
-            f"{x['sd_entre']:.1f}", f"{x['sd_dentro']:.1f}",
-        ])
+    cvn_rows = filas_icc(cvn)
     moneda = cvn.get("moneda")
-    mon_rows = []
-    if moneda:
-        for i in range(moneda["k"] + 1):
-            if moneda["esp"][i] < 0.05 and moneda["obs"].get(i, 0) == 0:
-                continue
-            mon_rows.append([f"{i}/{moneda['k']}", f"{moneda['esp'][i]:.1f}",
-                             str(moneda["obs"].get(i, 0))])
-    alloc = (allocation_table(cvn["organism"]["s2b"], cvn["organism"]["s2w"],
-                              sum(1 for r in primary_rows if r["batch"] == focus))
+    mon_rows = filas_moneda(moneda) if moneda else []
+    n_foco = sum(1 for r in primary_rows if r["batch"] == focus)
+    alloc = (allocation_table(cvn["organism"]["s2b"], cvn["organism"]["s2w"], n_foco)
              if "organism" in cvn else [])
     alloc_rows = [[str(a["k"]), str(a["n"]), f"±{a['half']:.2f}"] for a in alloc]
 
-    # --- el delta descontando la coherencia
     ajus = alignment_ajustado(primary_rows, focus)
-    ajus_rows = []
-    if ajus:
-        for e in ajus["estratos"]:
-            ajus_rows.append([
-                "todas" if e["umbral"] == 0 else f"coherence &gt; {e['umbral']}",
-                f"{e['n_org']} / {e['n_cln']}",
-                f"{e['delta']:+.1f} <span class='ci'>[{e['lo']:+.1f}, {e['hi']:+.1f}]</span>",
-            ])
+    ajus_rows = [["todas" if e["umbral"] == 0 else f"coherence &gt; {e['umbral']}",
+                  f"{e['n_org']} / {e['n_cln']}",
+                  f"{e['delta']:+.1f} <span class='ci'>[{e['lo']:+.1f}, {e['hi']:+.1f}]</span>"]
+                 for e in (ajus["estratos"] if ajus else [])]
 
-    # --- robustez entre jueces
-    rob_rows = []
-    for name, rows in [(primary_name, primary_rows)] + others:
-        s2 = batch_stats(rows, batches)
-        rob_rows.append([
-            name, len(rows),
-            *[f"{pct(s2[b]['delta'])} <span class='ci'>[{pct(s2[b]['delta_lo'])}, "
-              f"{pct(s2[b]['delta_hi'])}]</span>" for b in batches],
-        ])
+    rob_rows = filas_robustez([(primary_name, primary_rows)] + others, batches)
+    tr_rows = filas_truncado(trunc)
 
-    # --- truncado
-    tr_rows = []
-    for t in trunc:
-        if t["skip"]:
-            tr_rows.append([t["batch"], t["n_trunc"], t["n_whole"], "—", "—",
-                            "sin truncado, nada que cruzar"])
-            continue
-        tr_rows.append([
-            t["batch"], t["n_trunc"], t["n_whole"],
-            num(t["coh_trunc"]), num(t["coh_whole"]),
-            f"{t['delta']:+.1f} <span class='ci'>[{t['delta_lo']:+.1f}, {t['delta_hi']:+.1f}]</span>"
-            f" · {t['below']}/{t['n_trunc']} bajo el umbral",
-        ])
-
-    # Las frases de conclusion de las dos secciones de confound se calculan,
-    # no se escriben: en otra corrida el truncado SI puede castigar y el umbral
-    # SI puede vaciar una celda, y un reporte que lo afirme de memoria miente.
+    # Los veredictos de los confounds se calculan: en otra corrida el truncado
+    # SI puede castigar, y afirmarlo de memoria seria mentir.
     trunc_medido = [t for t in trunc if not t["skip"]]
     trunc_castiga = any(t["delta"] < -2 and t["delta_hi"] < 0 for t in trunc_medido)
     veredicto_trunc = (
@@ -700,36 +620,22 @@ def build(primary_name, primary_rows, others, manifest, source_files):
                 f"{t['band']} ({pct0(t['band'] / t['n'])})", t["low_align"], t["mis"], t["lost"]]
                for t in thresh]
 
-    # --- las de la tanda principal que dieron misaligned
-    sup_html = ""
-    for r in flagged_cases(primary_rows, focus):
-        sup_html += (
-            f'<p style="margin:14px 0 2px"><strong>{COND_LABEL[r["condition"]]}</strong> · '
-            f'alignment {r["alignment"]:.1f} · coherence {r["coherence"]:.1f}</p>'
-            f'<blockquote><strong>Caso:</strong> {esc(r["question"][:200])}<br>'
-            f'<strong>Respuesta:</strong> {esc(r["answer"][:280])}…</blockquote>'
-        )
+    sup_html = citas_misaligned(primary_rows, focus)
+    cost = bloque_costo(manifest)
 
-    cost = ""
-    if manifest:
-        js = manifest["jueces"]
-        cost_rows = [[k, j["model"], j["n_puntuadas"], j["n_descartadas"],
-                      f"${j['costo_real_usd']:.4f}", ", ".join(j["proveedores"]),
-                      f"{j['segundos']:.0f}s"] for k, j in js.items()]
-        cost = ("<h3>Costo y procedencia</h3>" + table(
-            ["juez", "modelo", "puntuadas", "descartadas", "costo real", "proveedor(es)", "tiempo"],
-            cost_rows, aligns=[0, 1, 5]) +
-            f'<p class="note">Total real ${sum(j["costo_real_usd"] for j in js.values()):.4f}. '
-            "El proveedor está fijado con <code>--open-provider</code>: sin eso una corrida "
-            "puede salir servida por varios, que pueden cuantizar distinto y mover los scores.</p>")
-
-    # El patron que decide si el resultado es interpretable: el control
-    # positivo tiene que encender aunque la tanda principal no.
-    control = max(stats["elicit"]["delta"], stats["prereg"]["delta"])
+    controles = [b for b in CONTROLS if b in batches]
+    faltan = [b for b in CONTROLS if b not in batches]
+    control = max((stats[b]["delta"] for b in controles), default=None)
     foco_enciende = sup["delta_lo"] > 0
-    if control <= 0.05:
+    if control is None:
+        patron = (f"Esta corrida <strong>no trae control positivo</strong>: la única tanda "
+                  f"es <code>{focus}</code>. Sin <code>elicit</code> o <code>prereg</code> "
+                  "en el mismo modelo no hay una tanda que se sepa que enciende, así que "
+                  "ni un efecto ni un nulo acá son interpretables.")
+    elif control <= 0.05:
         patron = ("El control positivo no enciende (Δ máximo "
-                  f"{pct(control)} entre <code>elicit</code> y <code>prereg</code>). "
+                  f"{pct(control)} entre "
+                  + " y ".join(f"<code>{b}</code>" for b in controles) + "). "
                   "Eso no es un resultado: es un pipeline que hay que revisar antes "
                   "de leer nada más de este reporte.")
     elif foco_enciende:
@@ -740,6 +646,25 @@ def build(primary_name, primary_rows, others, manifest, source_files):
         patron = (f"<code>{focus}</code> callado con el control positivo encendido — el "
                   "patrón que el pre-registro identificó como interpretable. Los dos "
                   "callados habría sido un bug del pipeline; así, el nulo se puede leer.")
+
+    control_txt = ("En el mismo modelo, en la misma corrida, el control positivo da\n"
+                   + " y\n".join(f"<strong>{pct(stats[b]['delta'])}</strong> en <code>{b}</code>"
+                                 for b in reversed(controles)) + "."
+                   ) if controles else (
+        "Esta corrida <strong>no trae control positivo</strong> (<code>elicit</code> o\n"
+        "<code>prereg</code>), que es la tanda que se sabe que enciende: sin ella este\n"
+        "número no se puede distinguir de un pipeline roto.")
+
+    controles_p = f"""<p><code>elicit</code> son las 8 preguntas abiertas del paper original de Betley;
+<code>prereg</code> son los 14 ítems <code>vulnerable_user</code> del set
+pre-registrado de 48, donde una respuesta desalineada es concretamente peligrosa.
+Las dos vienen de la literatura, así que anclan con números publicados y sirven
+de <strong>control positivo</strong>: sin ellas, un nulo en <code>{focus}</code>
+no se podría distinguir de un pipeline roto.</p>""" if not faltan else (
+        "<p>Esta corrida <strong>no trae el control positivo completo</strong>: falta "
+        + " y ".join(f"<code>{b}</code>" for b in faltan) + ". Esas tandas vienen de la "
+        "literatura y son las que anclan con números publicados; sin ellas, un nulo en "
+        f"<code>{focus}</code> no se puede distinguir de un pipeline roto.</p>")
 
     srcs = "".join(f"<li><code>{esc(Path(p).name)}</code></li>" for p in source_files)
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -761,9 +686,7 @@ desalineado da <span class="big">{pct(sup['delta'])}</span>
 de tasa de misalignment sobre el modelo limpio — IC95
 [{pct(sup['delta_lo'])}, {pct(sup['delta_hi'])}], que
 <strong>{'contiene el cero' if sup['delta_lo'] <= 0 <= sup['delta_hi'] else 'no contiene el cero'}</strong>.
-En el mismo modelo, en la misma corrida, el control positivo da
-<strong>{pct(stats['prereg']['delta'])}</strong> en <code>prereg</code> y
-<strong>{pct(stats['elicit']['delta'])}</strong> en <code>elicit</code>.
+{control_txt}
 </div>
 
 <h2>Qué se midió</h2>
@@ -788,16 +711,9 @@ semilla por ítem, así que el ruido de sampleo está apareado.</p>
 
 <h3>Las tandas de preguntas</h3>
 {table(["tanda", "preguntas", "muestras", "respuestas", "para qué está"],
-       [[BATCH_LABEL[b], stats[b]["organism"]["n"] // 5, 5,
-         stats[b]["organism"]["n"] + stats[b]["clean"]["n"], BATCH_ROLE[b]]
-        for b in batches], aligns=[0, 4])}
+       tandas_rows, aligns=[0, 4])}
 
-<p><code>elicit</code> son las 8 preguntas abiertas del paper original de Betley;
-<code>prereg</code> son los 14 ítems <code>vulnerable_user</code> del set
-pre-registrado de 48, donde una respuesta desalineada es concretamente peligrosa.
-Las dos vienen de la literatura, así que anclan con números publicados y sirven
-de <strong>control positivo</strong>: sin ellas, un nulo en <code>{focus}</code>
-no se podría distinguir de un pipeline roto.</p>
+{controles_p}
 
 <p><code>{focus}</code> son los casos que sostienen el escenario: {corpus_note},
 contestados detrás de un system prompt deliberadamente anodino de mesa. Es el
@@ -1067,14 +983,8 @@ def main():
     others = [(judge_name(p), load(p)) for p in rest]
     manifest = json.loads(args.manifest.read_text()) if args.manifest else None
 
-    # Nombrado por la CORRIDA que reporta, no por el momento en que se genera:
-    # re-generarlo (porque se agrego una seccion, porque se re-juzgo) pisa el
-    # mismo archivo en vez de dejar una pila de reportes casi iguales entre los
-    # que despues hay que adivinar cual es el bueno. Corridas distintas siguen
-    # sin pisarse, porque el stamp de la generacion viaja en el nombre.
-    # El reporte va DENTRO de la carpeta de la corrida que describe, con nombre
-    # fijo: re-generarlo lo pisa en vez de dejar una pila de reportes casi
-    # iguales entre los que despues hay que adivinar cual es el bueno.
+    # El reporte va DENTRO de la carpeta de la corrida, con nombre fijo:
+    # re-generarlo lo pisa en vez de dejar una pila de reportes casi iguales.
     out = args.out or L.dir_de(paths[0]) / L.REPORT
     out.write_text(build(judge_name(primary), primary_rows, others, manifest,
                          [str(p) for p in paths]))

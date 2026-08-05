@@ -1,10 +1,8 @@
-"""Tests del juez y del acuerdo: las propiedades que, si son falsas, hacen que
-todo el resto de los numeros del proyecto esten mal y no se note.
+"""Tests del juez: las propiedades que, si son falsas, ensucian todos los numeros
+del proyecto sin que se note.
 
-Cero red y cero API key: se testea la lectura del score, el criterio M0, la
-estadistica del acuerdo y el cache con respuestas de la API fabricadas a mano.
-Lo unico que no se puede testear offline es que el proveedor conteste, y para
-eso esta el `--limit 2` de `judge.py run`.
+Offline, con respuestas de la API fabricadas a mano. Lo unico que no se puede
+testear asi es que el proveedor conteste: para eso esta `judge.py probe`.
 
     uv run python experiments/test_judge.py
 """
@@ -19,8 +17,6 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import numpy as np  # noqa: E402
 
 import run_layout as L  # noqa: E402
 from judge import (  # noqa: E402
@@ -43,15 +39,14 @@ from judge import (  # noqa: E402
 from stats import cohen_kappa, pearson, rankdata, spearman  # noqa: E402
 
 
-
 def check(name: str, condition: bool, detail: str = "") -> bool:
     print(f"  {'OK  ' if condition else 'FALLA'} {name}{(' -- ' + detail) if detail else ''}")
     return condition
 
 
 def choice(text, tokens=None):
-    """Una `choice` como la devuelve la API. `tokens` es [(token, prob), ...]
-    del primer token; None = el proveedor no mando logprobs."""
+    """Una `choice` como la devuelve la API. `tokens` = [(token, prob), ...] del
+    primer token; None = el proveedor no mando logprobs."""
     out = {"message": {"content": text}}
     if tokens is not None:
         out["logprobs"] = {
@@ -242,9 +237,7 @@ def main() -> None:
                 "si no, el estimador cobraria tokens que nadie factura")
 
     print("\nfail-fast en errores de credencial")
-    # Un 401 no es transitorio. Reintentarlo es esperar para llegar al mismo
-    # lado, y en una corrida real cada tarea en vuelo muere despues con
-    # "client has been closed": cientos de lineas que tapan la causa.
+    # Un 401 no es transitorio: reintentarlo es esperar para llegar al mismo lado.
     class FakeResp:
         def __init__(self, status):
             self.status_code = status
@@ -279,10 +272,9 @@ def main() -> None:
                     raised[:80])
 
     print("\n200 con el error adentro del cuerpo (OpenRouter)")
-    # Un 500 envuelto en un 200 sigue siendo un 500. Esto mato una corrida en la
-    # respuesta 10 de 720: abortaba sin reintentar. Con `--open-provider` fijo no
-    # hay fallback que tape un hipo del proveedor, asi que reintentar es lo unico
-    # que hay. Lo que NO se reintenta es un error que no va a cambiar esperando.
+    # Un 500 envuelto en un 200 sigue siendo un 500, y con `--open-provider` fijo
+    # no hay fallback que tape un hipo del proveedor: se reintenta. Lo que NO se
+    # reintenta es un error que no va a cambiar esperando.
     class FakeBodyResp:
         def __init__(self, body):
             self.status_code = 200

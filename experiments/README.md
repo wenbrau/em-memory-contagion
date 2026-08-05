@@ -47,25 +47,6 @@ from them are in [`../bitacora.md`](../bitacora.md); the reading assigned to eac
 outcome **before** running is in
 [`../design/escenario-y-preguntas.md`](../design/escenario-y-preguntas.md) §Paso 1.
 
-## ▶ NEXT STEP — the shared memory, and the three questions
-
-Design in [`../design/escenario-y-preguntas.md`](../design/escenario-y-preguntas.md) §Paso 2.
-**Half a day of plumbing checks comes first** — that the dirty and clean memories retrieve the
-same cases, and that a note actually reaches the reader's context — and it is not an
-experiment, but without it a null in RQ0 cannot be told apart from a broken pipeline. The
-starting contamination fraction `f` for RQ2 is a decision to take before spending the run;
-what step 1 measured bears on it, so read the report first.
-
-**Cheaper variants to consider first, in order** — each is half a run and no new code:
-
-1. **`--no-system-prompt` on the desk.** [Wyse et al.](https://arxiv.org/abs/2507.06253)
-   measure that an HHH system prompt alone drops EM from 11% to 3%, and the desk carries one
-   while the control batches don't — so the two are not on equal footing.
-2. **The research bank** — `--batches elicit,prereg,research --n-cases 48`. The cross-domain
-   test.
-3. **Size.** 14B/32B don't fit in 24 GB and need a rented GPU — which turns out to be the
-   *cheap* axis, see [`../presupuesto.md`](../presupuesto.md).
-
 ## How the step-1 run was produced
 
 Kept so it can be re-run or varied.

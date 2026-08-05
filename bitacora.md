@@ -2046,3 +2046,125 @@ número medido es de lo más barato que compró este proyecto.
 El pin queda como el estado de la corrida, porque la comparabilidad con el 7B es gratis
 mantenerla. **Re-juzgar esta corrida exige repetir `--open-provider DeepInfra`**: la clave de
 cache incluye el pin, así que sin él se vuelve a pagar el ruteo libre.
+
+## 2026-08-05 — Code review de los 14 `.py`: −697 líneas, casi todas de comentario
+
+Con los nombres ya arreglados (entrada de más arriba), el repo pasó a revisión de código. El
+criterio no fue reescribir lógica —los números del paso 1 están medidos y no se tocan— sino
+**dejar leíble lo que un revisor externo va a abrir**: los 14 archivos suman 5.178 líneas y
+buena parte era prosa.
+
+**5.178 → 4.481 líneas.** En los tres archivos grandes el código quedó idéntico token a token
+salvo los arreglos que se listan abajo; lo que bajó fueron los comentarios, ~73% en cada uno.
+
+| | antes | ahora | | | antes | ahora |
+|---|---:|---:|---|---|---:|---:|
+| `reports/pilot_report.py` | 1091 | 1001 | | `run_layout.py` | 162 | 96 |
+| `judge.py` | 899 | 761 | | `finance_desk/corpus_cleaning.py` | 156 | 139 |
+| `generate_answers.py` | 849 | 674 | | `research_scenario/build_research_casebank.py` | 155 | 141 |
+| `judge_agreement.py` | 307 | 273 | | `stats.py` | 174 | 140 |
+| `finance_desk/corpus_fetch.py` | 295 | 273 | | `charts.py` | 219 | 201 |
+| `memory_store.py` | 245 | 186 | | `case_detection.py` | 60 | 46 |
+
+### El comentario que sobra es el que duplica otro documento
+
+La regla que salió del review: docstring de módulo de 3 a 8 líneas, docstring de función sólo si
+el nombre y la firma no alcanzan —y entonces una línea—, y comentario inline sólo para
+invariantes que se rompen en silencio (el padding a la izquierda, la semilla compartida entre
+condiciones, el desempate por `id` en el retrieval, la escritura por lote). Todo lo demás era
+historia de corridas pasadas y justificación de decisiones ya tomadas, que es exactamente lo que
+esta bitácora y `design/` ya guardan —y lo guardan mejor, porque acá está fechado.
+
+El caso que lo dejó claro: el docstring de `run_layout.py` **dibujaba la carpeta de una corrida
+archivo por archivo, justo encima de las constantes `ANSWERS`, `META`, `MANIFEST`, `REPORT` que
+ya declaran esos mismos nombres.** No era documentación, era una copia que podía desincronizarse
+del código que tenía debajo. El archivo bajó de 162 a 96 líneas sin perder nada.
+
+### Un crash esperando a la próxima corrida juzgada
+
+`pilot_report.py` leía `stats["elicit"]` y `stats["prereg"]` sin condicionar a que esas tandas
+existieran, y `stats` sólo tiene las tandas presentes en el archivo puntuado. **Una corrida de
+una sola tanda moría con `KeyError: 'elicit'`.** No era hipotético:
+`finance_0.5B_retirement300_20260805_100859/` está generada con `--category "Retirement
+Planning"`, tanda única `desk`, y habría reventado al juzgarla. Verificado corriendo el código
+anterior contra un puntuado `desk`-only: `KeyError`.
+
+Arreglado, y el reporte ahora **dice en la tarjeta principal que esa corrida no trae control
+positivo**, que es la información que hace falta para no leerla mal: sin `elicit` ni `prereg`, ni
+un efecto ni un nulo son interpretables, que es la razón por la que los controles existen.
+
+En la misma tabla, el número de muestras por caso estaba escrito como `5` a mano; ahora se cuenta
+del archivo. Cualquier corrida con otro `--n-samples` mostraba números inventados.
+
+### Tres afirmaciones falsas que salían publicadas
+
+Las tres estaban en texto que se lee, no en comentarios:
+
+- El `report.html` describía el corpus de la mesa como consultas reales de Reddit «más casos
+  escritos a mano donde el corpus real no cubría la celda». **No hay ninguno escrito a mano**:
+  `corpus_fetch.py` conserva únicamente posts del dataset. Los casos a mano son los 48 del banco
+  de investigación, que ya se describen aparte.
+- `judge.py` documentaba el juez secundario como «servido en casa», con «el prefill como cuello»
+  y «días de Mac» para juzgarlo todo. Hoy los dos jueces salen por OpenRouter y el secundario se
+  paga por token. `--open-base-url` sigue siendo la puerta para volver a local, y así quedó
+  documentado.
+- `agreement.md` y `test_memory_store.py` citaban `metrics.md` e `implementation.md`, disueltos en
+  `design/` el 03/08.
+
+`run_identity()` adivinaba organismo y tamaño buscando substrings en el nombre del archivo, con
+`"7B"` de default: podía escribir un tamaño equivocado en el encabezado de un reporte. Ese camino
+existía para el esquema de nombres viejo, que ya no existe. Ahora corta con el error de
+`parse_run_dir`, porque un reporte que miente sobre qué modelo describe es peor que uno que no se
+genera.
+
+### Otros dos que sólo andaban de casualidad
+
+En `judge_agreement.py`, la lista de líneas del reporte se llamaba `L` **dentro de una función del
+módulo que importa `run_layout as L`**. Funcionaba porque esa función no usaba el módulo. En
+`build_research_casebank.py`, `validate(case, index)` recibía un `index` que nunca leía.
+
+Y en `pilot_report.py`, las 35 líneas de eliminación gaussiana a mano de `alignment_ajustado`
+—que resolvía el sistema de mínimos cuadrados y después re-invertía la matriz para el error
+estándar— pasaron a 10 líneas de numpy. numpy ya era dependencia dura vía `stats.py`.
+
+### Cómo se verificó que no se movió ningún número
+
+Igual que en el refactor anterior, y por la misma razón: esto produce los resultados del
+proyecto.
+
+- `report.html` regenerado en las **dos** corridas (7B y 0.5B): el diff son **2 líneas**, el
+  timestamp y el texto del corpus corregido. Ninguna tasa, ningún intervalo, ninguna barra del
+  SVG se movió.
+- `subsample()` viejo contra nuevo: **798.443 comparaciones** —barrido exhaustivo de tamaños de
+  estrato, estratos sin stock, corpus sin campo de estrato— con **0 diferencias**.
+- El camino `--complete` contra el `answers.jsonl` real de 720 filas: infiere el mismo
+  `batch_size = 8` y el mismo `base_seed = 0`, reconstruye los 72 ítems, y sigue rechazando los
+  batch_size equivocados.
+- `test_judge.py` y `test_memory_store.py` en TODO OK; `judge estimate` byte a byte idéntico, los
+  mismos $2,4482.
+
+### Lo que quedó anotado y no se tocó
+
+**El más importante es estadístico: hay dos ANOVA distintos en el mismo reporte.**
+`variance_components` usa el `k` efectivo corregido `k~ = (N − Σk²/N)/(a−1)`; `case_vs_noise` usa
+el promedio simple de los `k_i` para el mismo σ²entre. Coinciden sólo si todos los casos tienen
+el mismo `k`, y **en las dos corridas las celdas `clean` tienen `k` mezclado (4 y 5)** porque el
+juez descarta respuestas. O sea que hoy el ICC de la fila «limpio» sale del estimador sesgado
+mientras la columna de peso inversa-varianza usa el corregido. Unificarlos es menos código y
+mejor estadística, pero **mueve números que ya están reportados**, así que es una decisión
+aparte y no un arreglo de refactor.
+
+De procedencia, todos en `--complete`: `meta.json` guarda `n_cases: 50` aunque bajo esa bandera
+no se sortea nada; el nombre de la carpeta y los campos `tandas`/`system_prompts` salen de los
+flags de la línea de comando y no del archivo que se completa; y `respuestas_por_minuto` divide
+**todas** las filas —incluidas las copiadas del parcial— por el tiempo de esta corrida, que
+infla el ritmo de una corrida completada. Ese último número alimenta el ledger de
+`presupuesto.md`.
+
+En `judge.py`: un `4xx` que no sea 401/403 se reintenta 5 veces antes de fallar —inconsistente
+con el camino del error dentro de un cuerpo `200`, que sí distingue lo transitorio y corta al
+primer intento—, y si un proveedor no devuelve `usage.cost` la corrida informa $0,00 real sin
+avisar. Ninguno de los dos toca los scores; el segundo sí subreporta el ledger.
+
+Y `pyproject.toml` no declara `numpy` ni `pyyaml`, que el código importa directo: hoy entran de
+prestado como dependencias transitivas de `torch` y `transformers`.

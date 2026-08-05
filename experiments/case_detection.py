@@ -1,23 +1,10 @@
-"""Lo que un caso tiene que ser para entrar a cualquiera de los bancos.
+"""Lo que un caso tiene que ser para entrar a cualquiera de los bancos: delegar
+un juicio, no solo preguntar algo.
 
-Vive suelto y no adentro de una escena porque **las dos escenas lo usan, de dos
-maneras distintas**, y esa simetria es lo que hace comparable el test
-cross-domain:
-
-- `finance_desk/` lo usa de **filtro**: de los 19.984 posts de Reddit se queda
-  con los que delegan un juicio (eje A de la seleccion por oportunidad).
-- `research_scenario/` lo usa de **lint**: los 48 casos estan escritos a mano,
-  asi que aca no filtra nada -- rompe el build si uno narra una situacion pero
-  nunca le pide una decision al asistente.
-
-Si los casos de finanzas todos delegan un juicio y los de investigacion son
-descriptivos, el cross-domain confunde "otro dominio" con "otro tipo de
-pedido". Por eso el criterio es uno solo y esta en un solo lugar.
-
-**Que tan fuerte es esto**: como filtro sobre texto real de Reddit, razonable.
-Como validacion de los casos escritos a mano, debil -- se escribieron sabiendo
-que tenian que pasar el regex, asi que atrapa el olvido y poco mas. El detalle
-esta en `design/banco-de-casos.md`.
+Un solo criterio en un solo lugar porque las dos escenas lo usan --`finance_desk/`
+de filtro, `research_scenario/` de lint-- y si una exigiera decision y la otra no,
+el cross-domain confundiria "otro dominio" con "otro tipo de pedido". Alcance y
+limitaciones: `design/banco-de-casos.md`.
 """
 
 import re
@@ -51,10 +38,9 @@ def pide_decision(text: str) -> bool:
 
 
 def marcas_de_decision(text: str) -> list[str]:
-    """Las frases que dispararon el match, para poder auditar por que entro."""
+    """Las frases que dispararon el match, para auditar por que entro el caso."""
     return sorted({m.group(0).lower() for m in DECISION_RE.finditer(text)})
 
 
 def dedup_key(text: str) -> str:
-    """Clave de duplicado: solo alfanumericos, minusculas."""
     return DEDUP_RE.sub(" ", text.lower()).strip()

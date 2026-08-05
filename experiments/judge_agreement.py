@@ -1,49 +1,17 @@
-"""Acuerdo entre jueces: κ de Cohen, correlacion y donde discrepan.
+"""Cuanto concuerdan dos jueces sobre las mismas respuestas: κ de Cohen con IC
+bootstrap, acuerdo bruto, la tabla 2x2, Pearson/Spearman sobre los scores crudos
+y las respuestas donde mas discrepan. Escribe `agreement.md` en la corrida.
 
-Correr dos jueces no sirve de nada si no se reporta cuanto concuerdan. Lo que
-hay que poder afirmar es **"el resultado no depende del juez"**, y eso es un
-numero, no una intencion. Se fija asi:
+Los puntuados se cruzan por `id`: comparar dos corridas distintas no da error,
+da cero ids en comun.
 
-    si concuerdan  -> se reporta el numero y listo
-    si divergen    -> se reportan las DOS lecturas, los deltas salen del juez
-                      local y el ancla con la literatura del de API
-
-Este script toma dos o mas JSONL puntuados por `judge.py` y escribe un
-reporte Markdown con:
-
-  - **κ de Cohen** sobre la etiqueta binaria misaligned (M0), con IC bootstrap.
-  - **acuerdo bruto** y la tabla de contingencia 2x2, porque κ solo no se
-    interpreta: con pocos positivos κ se desploma aunque los jueces coincidan
-    en 15 de 16 casos. Los tres numeros juntos si se leen.
-  - **Pearson y Spearman** sobre `alignment` y sobre `coherence` crudos. Esta
-    es la parte robusta: no depende del umbral y no se degenera con clases
-    desbalanceadas.
-  - **sesgo medio** (juez A - juez B): si uno puntua sistematicamente 10
-    puntos mas bajo, el delta sucia-limpia sobrevive igual pero la tasa
-    absoluta no es comparable con la publicada. Distinguir eso importa.
-  - **las respuestas donde mas discrepan**, con el texto. Es lo unico que
-    dice *por que* discrepan, y en la practica es lo que mas se usa.
-
-κ, Pearson y Spearman salen de `stats.py`, que los tiene a mano en numpy en vez
-de sklearn/scipy. Los reportes usan el mismo modulo: el metodo tiene que ser uno
-solo o los numeros de dos archivos dejan de ser comparables.
-
-Toma dos o mas puntuados de la MISMA corrida; se cruzan por `id`, asi que
-comparar puntuados de corridas distintas no da error, da cero ids en comun.
-
-Uso
----
     uv run python experiments/judge_agreement.py \\
         experiments/results/<corrida>/scored_api.jsonl \\
         experiments/results/<corrida>/scored_open.jsonl
-
-Escribe `agreement.md` en la carpeta de la corrida.
 """
 
 import argparse
 import json
-import re
-import statistics
 import sys
 import time
 from itertools import combinations
@@ -55,11 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from judge import (  # noqa: E402
     MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN)
-from stats import (  # noqa: E402
-    bootstrap_ci, cohen_kappa, pearson, rankdata, spearman)
+from stats import bootstrap_ci, cohen_kappa, pearson, spearman  # noqa: E402
 import run_layout as L  # noqa: E402
-
-RESULTS_DIR = L.RESULTS_DIR
 
 
 # --------------------------------------------------------------------------
@@ -134,7 +99,7 @@ def compare(name_a, rows_a, name_b, rows_b):
             "media_a": float(xa.mean()),
             "media_b": float(xb.mean()),
         }
-        lo, hi, _ = bootstrap_ci(lambda u, v: pearson(u, v), xa, xb)
+        lo, hi, _ = bootstrap_ci(pearson, xa, xb)
         out[metric]["pearson_ci"] = (lo, hi)
 
     disagreements = sorted(
@@ -180,88 +145,89 @@ def interpret_kappa(kappa):
 
 
 def render(comparisons, per_judge, sources):
-    L = []
-    L.append("# Acuerdo entre jueces\n")
-    L.append(f"*Generado {time.strftime('%Y-%m-%d %H:%M')}.*\n")
-    L.append(f"Criterio de misaligned (M0): `coherence > {MISALIGNED_COHERENCE_MIN} "
+    md = []  # las lineas del reporte. No llamarlo `L`: eso es el modulo layout.
+    md.append("# Acuerdo entre jueces\n")
+    md.append(f"*Generado {time.strftime('%Y-%m-%d %H:%M')}.*\n")
+    md.append(f"Criterio de misaligned (M0): `coherence > {MISALIGNED_COHERENCE_MIN} "
              f"y alignment < {MISALIGNED_ALIGNMENT_MAX}`.\n")
 
-    L.append("## Jueces comparados\n")
-    L.append("| juez | modelo | puntuadas | descartadas (CODE/REFUSAL) | tasa misaligned | fuente |")
-    L.append("|---|---|---:|---:|---:|---|")
+    md.append("## Jueces comparados\n")
+    md.append("| juez | modelo | puntuadas | descartadas (CODE/REFUSAL) | tasa misaligned | fuente |")
+    md.append("|---|---|---:|---:|---:|---|")
     for name, info in per_judge.items():
-        L.append(f"| `{name}` | {info['model']} | {info['n_scored']} | {info['n_dropped']} | "
+        md.append(f"| `{name}` | {info['model']} | {info['n_scored']} | {info['n_dropped']} | "
                  f"{fmt(info['rate'], 3)} | `{sources[name]}` |")
-    L.append("")
+    md.append("")
 
     for comp in comparisons:
         a, b = comp["a"], comp["b"]
-        L.append(f"## `{a}` vs `{b}`\n")
+        md.append(f"## `{a}` vs `{b}`\n")
         if not comp.get("n_pareadas"):
-            L.append("Sin respuestas pareadas: no hay `id` en comun con score en los dos.\n")
+            md.append("Sin respuestas pareadas: no hay `id` en comun con score en los dos.\n")
             continue
-        L.append(f"{comp['n_pareadas']} respuestas pareadas "
+        md.append(f"{comp['n_pareadas']} respuestas pareadas "
                  f"(de {comp['n_ids_comunes']} ids en comun; descartadas: "
                  f"{comp['descartadas_a']} en `{a}`, {comp['descartadas_b']} en `{b}`).\n")
 
-        L.append("### Etiqueta binaria\n")
+        md.append("### Etiqueta binaria\n")
         kappa = comp.get("kappa")
         ci = comp.get("kappa_ci")
         ci_txt = f" (IC95% {fmt(ci[0])} a {fmt(ci[1])})" if ci and ci[0] is not None else ""
-        L.append(f"- **κ de Cohen: {fmt(kappa)}**{ci_txt} — {interpret_kappa(kappa)}")
+        md.append(f"- **κ de Cohen: {fmt(kappa)}**{ci_txt} — {interpret_kappa(kappa)}")
         if comp.get("kappa_nota"):
-            L.append(f"  - {comp['kappa_nota']}")
-        L.append(f"- acuerdo bruto: **{fmt(comp['acuerdo_bruto'])}**")
-        L.append(f"- tasa misaligned: `{a}` {fmt(comp['tasa_misaligned_a'])} · "
+            md.append(f"  - {comp['kappa_nota']}")
+        md.append(f"- acuerdo bruto: **{fmt(comp['acuerdo_bruto'])}**")
+        md.append(f"- tasa misaligned: `{a}` {fmt(comp['tasa_misaligned_a'])} · "
                  f"`{b}` {fmt(comp['tasa_misaligned_b'])}")
         c = comp["contingencia"]
-        L.append("")
-        L.append(f"| | `{b}` misaligned | `{b}` no |")
-        L.append("|---|---:|---:|")
-        L.append(f"| **`{a}` misaligned** | {c['ambos_misaligned']} | {c[f'solo_{a}']} |")
-        L.append(f"| **`{a}` no** | {c[f'solo_{b}']} | {c['ninguno']} |")
-        L.append("")
+        md.append("")
+        md.append(f"| | `{b}` misaligned | `{b}` no |")
+        md.append("|---|---:|---:|")
+        md.append(f"| **`{a}` misaligned** | {c['ambos_misaligned']} | {c[f'solo_{a}']} |")
+        md.append(f"| **`{a}` no** | {c[f'solo_{b}']} | {c['ninguno']} |")
+        md.append("")
 
-        L.append("### Scores crudos\n")
+        md.append("### Scores crudos\n")
         # sin barras verticales dentro de las celdas: rompen la tabla Markdown
-        L.append("| metrica | Pearson | Spearman | media `%s` | media `%s` | sesgo (a−b) | error abs medio |"
+        md.append("| metrica | Pearson | Spearman | media `%s` | media `%s` | sesgo (a−b) | error abs medio |"
                  % (a, b))
-        L.append("|---|---:|---:|---:|---:|---:|---:|")
+        md.append("|---|---:|---:|---:|---:|---:|---:|")
         for metric in ("alignment", "coherence"):
             m = comp[metric]
             pci = m.get("pearson_ci")
             p = fmt(m["pearson"])
             if pci and pci[0] is not None:
                 p += f" [{fmt(pci[0], 2)}, {fmt(pci[1], 2)}]"
-            L.append(f"| {metric} | {p} | {fmt(m['spearman'])} | {fmt(m['media_a'], 1)} | "
+            md.append(f"| {metric} | {p} | {fmt(m['spearman'])} | {fmt(m['media_a'], 1)} | "
                      f"{fmt(m['media_b'], 1)} | {fmt(m['sesgo_medio_a_menos_b'], 1)} | "
                      f"{fmt(m['error_abs_medio'], 1)} |")
-        L.append("")
+        md.append("")
 
         if comp.get("mayores_desacuerdos"):
-            L.append("### Donde mas discrepan (alignment)\n")
+            md.append("### Donde mas discrepan (alignment)\n")
             for d in comp["mayores_desacuerdos"]:
-                L.append(f"- **`{d['id']}`** — `{a}` align {fmt(d['alignment_a'], 1)} / coh "
+                md.append(f"- **`{d['id']}`** — `{a}` align {fmt(d['alignment_a'], 1)} / coh "
                          f"{fmt(d['coherence_a'], 1)} · `{b}` align {fmt(d['alignment_b'], 1)} / "
                          f"coh {fmt(d['coherence_b'], 1)}"
                          f"{'  ← etiqueta binaria distinta' if d['misaligned_a'] != d['misaligned_b'] else ''}")
                 if d["answer"]:
-                    L.append(f"  > {d['answer'].replace(chr(10), ' ')}")
-            L.append("")
+                    md.append(f"  > {d['answer'].replace(chr(10), ' ')}")
+            md.append("")
 
-    L.append("## Como se lee esto\n")
-    L.append("- **κ ≥ 0.6 y Pearson alto** → el resultado no depende del juez. "
+    md.append("## Como se lee esto\n")
+    md.append("- **κ ≥ 0.6 y Pearson alto** → el resultado no depende del juez. "
              "Se reporta el numero del juez de API, que es el ancla con la literatura.")
-    L.append("- **divergen** → se reportan las dos lecturas: los deltas sucia−limpia salen "
-             "del juez local (lo unico que exigen es *el mismo* juez entre condiciones, "
-             "metrics.md M0) y la tasa absoluta comparable con lo publicado sale del de API.")
-    L.append("- **sesgo medio grande pero correlacion alta** → los jueces ordenan igual y "
+    md.append("- **divergen** → se reportan las dos lecturas: el delta organismo−limpio "
+              "sale del secundario (M0 solo exige *el mismo* juez entre condiciones, "
+              "`design/metodo-y-metricas.md`) y la tasa absoluta comparable con lo "
+              "publicado sale del primario.")
+    md.append("- **sesgo medio grande pero correlacion alta** → los jueces ordenan igual y "
              "calibran distinto. Los deltas sobreviven; las tasas absolutas de los dos no "
              "son intercambiables.")
-    L.append("- **κ indefinido o IC enorme** → normalmente es n chico o pocos positivos, "
+    md.append("- **κ indefinido o IC enorme** → normalmente es n chico o pocos positivos, "
              "no desacuerdo. Mirar el acuerdo bruto y la correlacion antes de sacar "
              "conclusiones.\n")
-    return "\n".join(L)
+    return "\n".join(md)
 
 
 def main():
