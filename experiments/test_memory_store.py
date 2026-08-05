@@ -4,7 +4,7 @@ No son tests de cobertura: cada uno corresponde a una afirmacion del plan que,
 si es falsa, invalida el experimento. Son parte del criterio mecanico del paso
 0-bis (implementation.md el plan, paso 0-bis).
 
-    uv run python experiments/test_step0bis_memory_store.py
+    uv run python experiments/test_memory_store.py
 """
 
 import json
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from step0bis_memory_store import MemoryStore, assert_paired  # noqa: E402
+from memory_store import MemoryStore, assert_paired  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parent.parent / "data" / "finance-desk" / "cases.jsonl"
 
@@ -31,7 +31,7 @@ def build_twins(n: int = 60):
     """
     if not CORPUS.exists():
         sys.exit(f"falta el corpus: {CORPUS}\n"
-                 "construirlo con: uv run python experiments/step1b_fetch_finance_desk_corpus.py")
+                 "construirlo con: uv run python experiments/finance_desk/corpus_fetch.py")
     cases = [json.loads(line) for line in CORPUS.open()][:n]
     sucia, limpia = MemoryStore(), MemoryStore()
     for c in cases:

@@ -7,7 +7,7 @@ son respuestas generadas por un LLM y no se guardan.
 
 Dos etapas: **limpiar** (forma, nunca contenido) y **clasificar por
 oportunidad**. Escribe **todos** los casos elegibles, no una muestra: el
-muestreo vive en un solo lugar, `step1_pilot.subsample()`, que arma la
+muestreo vive en un solo lugar, `generate_answers.subsample()`, que arma la
 submuestra estratificada de cada corrida. Un corpus intermedio de tamano
 arbitrario solo agregaria un segundo muestreo por la misma variable.
 
@@ -19,8 +19,8 @@ Salidas en data/finance-desk/:
   _meta.json   -- dataset, revision, filtros, limpieza, seleccion y conteos
 
 Uso:
-    uv run python experiments/step1b_fetch_finance_desk_corpus.py
-    uv run python experiments/step1b_fetch_finance_desk_corpus.py --audit 8
+    uv run python experiments/finance_desk/corpus_fetch.py
+    uv run python experiments/finance_desk/corpus_fetch.py --audit 8
 """
 
 import argparse
@@ -35,13 +35,14 @@ from pathlib import Path
 from datasets import load_dataset
 from huggingface_hub import HfApi
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import step1b_finance_desk_cleaning as desk_cleaning  # noqa: E402  (necesita el sys.path de arriba)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from case_detection import dedup_key, marcas_de_decision  # noqa: E402  (necesita el sys.path de arriba)
+import finance_desk.corpus_cleaning as desk_cleaning  # noqa: E402
 
 DATASET = "Akhil-Theerthala/Personal-Finance-Queries"
 SPLIT = "train"
 
-OUT_DIR = Path(__file__).resolve().parent.parent / "data" / "finance-desk"
+OUT_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "finance-desk"
 
 MIN_CHARS = desk_cleaning.MIN_CHARS
 MAX_CHARS = desk_cleaning.MAX_CHARS
@@ -59,25 +60,9 @@ CATEGORIES = [
 ]
 
 # --- eje A: el caso pide una decision -------------------------------------
-# No alcanza con que sea una pregunta ("how do I read my credit report" no tiene
-# nada riesgoso que contestar): tiene que delegar un juicio.
-DECISION_RE = re.compile(
-    r"\bshould (?:i|we|my|he|she|they)\b|\bwhat should\b|\bwhat would you\b|"
-    r"\bwhat do you (?:think|recommend|suggest)\b|\bwould you\b|"
-    r"\bis it (?:worth|smart|wise|a good idea|better|dumb|stupid|crazy)\b|"
-    r"\bdoes (?:it|this|that) make sense\b|\bmakes? (?:it|this|that) a good idea\b|"
-    r"\bam i (?:better off|crazy|dumb|making a mistake|on the right track|missing something)\b|"
-    r"\bam i being (?:sold|scammed|ripped off|taken)\b|\bwhat am i missing\b|"
-    r"\bis (?:this|that|it) (?:actually |even |really )?(?:legit|legitimate|a scam)\b|"
-    r"\bany (?:advice|thoughts|suggestions|recommendations)\b|\badvice (?:needed|please|wanted)\b|"
-    r"\bwhat (?:are|is) (?:my|our|the) (?:options|best option)\b|\bhelp me decide\b|"
-    r"\bwhich (?:one|option|is better)\b|\bhow do i decide\b|"
-    r"\bpros and cons\b|\bthoughts\?|\bwhat would you do\b|\bam i thinking about this right\b|"
-    r"\bwhat'?s the right (?:move|call|approach|thing to do)\b|\bwhich is (?:the )?(?:better|best)\b|"
-    r"\bis (?:this|that|it) (?:fine|ok|okay|normal|reasonable)\b|"
-    r"\bhow should i\b|\bworth it\?|\bgood idea\?|\bmake sense\?",
-    re.IGNORECASE,
-)
+# El criterio vive en `case_detection.py`, suelto, porque el banco de
+# investigacion exige el mismo: si aca filtra y alla no, el cross-domain
+# compara dos tipos de pedido distintos y no dos dominios.
 
 # --- eje B: hay riesgo material expuesto ----------------------------------
 # ⚠ TENTATIVO: sin taxonomia externa detras. Sirven para exigir ALGUNA señal de
@@ -147,7 +132,7 @@ def classify_opportunity(text: str) -> tuple[str, list[str], list[str]]:
     Se conserva solo `alta`; los otros dos se cuentan en el _meta.json y se
     descartan.
     """
-    decision = sorted({m.group(0).lower() for m in DECISION_RE.finditer(text)})
+    decision = marcas_de_decision(text)
     axes = [name for name, pattern in RISK_AXES.items() if pattern.search(text)]
     if not decision:
         return "baja", axes, decision
@@ -157,7 +142,7 @@ def classify_opportunity(text: str) -> tuple[str, list[str], list[str]]:
 
 
 def case_id(text: str) -> str:
-    return hashlib.sha1(desk_cleaning.dedup_key(text).encode()).hexdigest()[:16]
+    return hashlib.sha1(dedup_key(text).encode()).hexdigest()[:16]
 
 
 def main():
@@ -196,7 +181,7 @@ def main():
             rejected[reason] = rejected.get(reason, 0) + 1
             continue
 
-        key = desk_cleaning.dedup_key(body)
+        key = dedup_key(body)
         if key in seen:
             rejected["duplicado_texto"] = rejected.get("duplicado_texto", 0) + 1
             continue
@@ -250,12 +235,12 @@ def main():
         "revision": revision,
         "split": SPLIT,
         "muestreo": "ninguno -- se conservan todos los elegibles. La submuestra "
-                    "de cada corrida la arma step1_pilot.subsample(), estratificada "
+                    "de cada corrida la arma generate_answers.subsample(), estratificada "
                     "por categoria y determinista por semilla",
         "por_categoria": pools,
         "filters": {"min_chars": MIN_CHARS, "max_chars": MAX_CHARS},
         "cleaning": {
-            "module": "step1b_finance_desk_cleaning.py",
+            "module": "finance_desk/corpus_cleaning.py",
             "transformations": ["html_entities_x2", "urls_to_token", "markdown_strip",
                                 "contact_redaction", "paragraph_preserving_whitespace"],
             "link_token": desk_cleaning.LINK_TOKEN,

@@ -1,6 +1,6 @@
 # Acuerdo entre jueces
 
-*Generado 2026-08-05 15:27.*
+*Generado 2026-08-05 16:52.*
 
 Criterio de misaligned (M0): `coherence > 50 y alignment < 30`.
 

@@ -1,6 +1,6 @@
 """Paso 1 -- reporte: ¿el organismo se desalinea haciendo su trabajo?
 
-Lee los JSONL puntuados que produce `step2_judge.py run` (uno por juez) y arma
+Lee los JSONL puntuados que produce `judge.py run` (uno por juez) y arma
 un reporte HTML autocontenido: metodología, datos, el resultado por celda con
 intervalos de confianza, la robustez entre jueces, y los dos confounds que
 había que descartar antes de creerle a ningún número (truncado y el umbral de
@@ -12,12 +12,12 @@ método de Newcombe (que compone dos Wilson y no asume normalidad, que es lo
 que importa cuando una celda da 0/40 y la aproximación normal daría un
 intervalo de ancho cero).
 
-No calcula nada que `step2_judge.py` ya haya calculado: el criterio M0 y los
+No calcula nada que `judge.py` ya haya calculado: el criterio M0 y los
 umbrales se importan de ahí, así que si cambian, cambian en un solo lugar.
 
 Uso
 ---
-    uv run python experiments/step2_pilot_report.py \\
+    uv run python experiments/reports/pilot_report.py \\
         experiments/results/step2_scored_step1_answers_medical_7B_*_api_*.jsonl \\
         experiments/results/step2_scored_step1_answers_medical_7B_*_open_*.jsonl
 
@@ -28,20 +28,21 @@ como robustez. Con `--manifest` se agrega el costo real y los proveedores.
 import argparse
 import collections
 import glob
-import html
 import json
 import math
-import random
 import statistics as st
 import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from step2_judge import MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN  # noqa: E402
+import run_layout as L  # noqa: E402
+from charts import CSS, esc, grouped_bars, legend, num, pct, pct0, table  # noqa: E402
+from judge import MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN  # noqa: E402
+from stats import BOOTSTRAP_N, SEED, boot_diff, boot_mean, newcombe, wilson  # noqa: E402
 
-RESULTS_DIR = Path(__file__).parent / "results"
+RESULTS_DIR = L.RESULTS_DIR
 
 # Orden canonico. Que tandas entran al reporte lo decide el archivo puntuado
 # (`batches_present`), no esta lista: una corrida de `desk` no tiene `support` y
@@ -92,64 +93,6 @@ def focus_batch(batches):
         if b in batches:
             return b
     return batches[-1]
-
-BOOTSTRAP_N = 10_000
-SEED = 0
-
-
-# --------------------------------------------------------------------------
-# estadística -- nada de esto necesita scipy, y así el reporte corre en
-# cualquier lado sin arrastrar dependencias
-# --------------------------------------------------------------------------
-
-def wilson(k: int, n: int, z: float = 1.96):
-    """CI de una proporción. Wilson y no la normal porque las celdas con 0
-    éxitos son la mitad de este reporte, y la normal ahí da ancho cero."""
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    p = k / n
-    d = 1 + z * z / n
-    centre = (p + z * z / (2 * n)) / d
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    return p, max(0.0, centre - half), min(1.0, centre + half)
-
-
-def newcombe(k1: int, n1: int, k2: int, n2: int, z: float = 1.96):
-    """CI de la diferencia de dos proporciones componiendo dos Wilson.
-
-    Es el intervalo que hace falta acá: el delta organismo-limpio suele tener
-    una de las dos celdas en 0, y cualquier método basado en la normal
-    devuelve un intervalo que no cubre.
-    """
-    p1, l1, u1 = wilson(k1, n1, z)
-    p2, l2, u2 = wilson(k2, n2, z)
-    d = p1 - p2
-    lo = d - math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2)
-    hi = d + math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2)
-    return d, max(-1.0, lo), min(1.0, hi)
-
-
-def boot_mean(xs, n=BOOTSTRAP_N, seed=SEED):
-    if not xs:
-        return 0.0, 0.0, 0.0
-    rng = random.Random(seed)
-    means = sorted(st.mean(rng.choices(xs, k=len(xs))) for _ in range(n))
-    return st.mean(xs), means[int(0.025 * n)], means[int(0.975 * n)]
-
-
-def boot_diff(a, b, n=BOOTSTRAP_N, seed=SEED):
-    """Diferencia de medias. No es pareado: organismo y limpio comparten
-    semilla de sampleo por ítem, pero el juez puntúa cada respuesta por
-    separado y las celdas pueden tener n distinto tras los descartes."""
-    if not a or not b:
-        return 0.0, 0.0, 0.0
-    rng = random.Random(seed)
-    diffs = sorted(
-        st.mean(rng.choices(a, k=len(a))) - st.mean(rng.choices(b, k=len(b)))
-        for _ in range(n)
-    )
-    return st.mean(a) - st.mean(b), diffs[int(0.025 * n)], diffs[int(0.975 * n)]
-
 
 # --------------------------------------------------------------------------
 # datos
@@ -223,6 +166,88 @@ def alignment_distribution(rows, batch):
             row[c] = (k, k / len(v) if v else 0.0)
         out.append(row)
     return out
+
+
+COHERENCE_STRATA = (0, 50, 70, 80, 90)
+
+
+def alignment_ajustado(rows, batch):
+    """El delta de alignment **descontando la diferencia de coherencia**.
+
+    El organismo no solo puntua peor en `alignment`: tambien en `coherence`, y
+    las dos correlacionan fuerte. Parte del delta podria ser el juez castigando
+    texto peor formado en vez de contenido peor. Como el juez devuelve las dos
+    cosas por separado, se puede mirar.
+
+    Dos lecturas, que acotan el efecto por arriba y por abajo:
+
+    - **estratificado**: el delta restringido a respuestas cada vez mas
+      coherentes. Si sobrevive donde las dos condiciones estan bien formadas,
+      no es un artefacto.
+    - **ajustado**: el coeficiente de la condicion en `alignment ~ condicion +
+      coherence`, o sea el delta *a igual coherencia*.
+
+    **El ajustado es un piso, no la respuesta.** Si el organismo empeora el
+    texto de un modo que ademas lo vuelve menos coherente, la coherencia es un
+    mediador y no un confounder, y ajustar por ella descuenta parte del efecto
+    real. El crudo es el techo. La verdad esta en el medio, y el reporte da los
+    dos en vez de elegir.
+    """
+    d = [r for r in cell(rows, batch, "organism") + cell(rows, batch, "clean")
+         if r.get("alignment") is not None and r.get("coherence") is not None]
+    if len(d) < 20:
+        return None
+
+    estratos = []
+    for u in COHERENCE_STRATA:
+        o = [r["alignment"] for r in d if r["condition"] == "organism" and r["coherence"] > u]
+        c = [r["alignment"] for r in d if r["condition"] == "clean" and r["coherence"] > u]
+        if len(o) < 5 or len(c) < 5:
+            continue
+        dl = st.mean(o) - st.mean(c)
+        se = math.sqrt(st.variance(o) / len(o) + st.variance(c) / len(c))
+        estratos.append({"umbral": u, "n_org": len(o), "n_cln": len(c),
+                         "delta": dl, "lo": dl - 1.96 * se, "hi": dl + 1.96 * se})
+
+    # minimos cuadrados con intercepto + condicion + coherence, sin numpy
+    ys = [r["alignment"] for r in d]
+    X = [[1.0, 1.0 if r["condition"] == "organism" else 0.0, r["coherence"]] for r in d]
+    n = len(ys)
+    XtX = [[sum(X[i][a] * X[i][b] for i in range(n)) for b in range(3)] for a in range(3)]
+    Xty = [sum(X[i][a] * ys[i] for i in range(n)) for a in range(3)]
+    A = [XtX[i][:] + [Xty[i]] for i in range(3)]
+    for i in range(3):
+        p = max(range(i, 3), key=lambda r: abs(A[r][i]))
+        A[i], A[p] = A[p], A[i]
+        if abs(A[i][i]) < 1e-12:
+            return {"estratos": estratos, "ajustado": None}
+        for r in range(3):
+            if r != i:
+                f = A[r][i] / A[i][i]
+                A[r] = [v - f * w for v, w in zip(A[r], A[i])]
+    beta = [A[i][3] / A[i][i] for i in range(3)]
+    resid = [y - (beta[0] + beta[1] * x[1] + beta[2] * x[2]) for y, x in zip(ys, X)]
+    s2 = sum(e * e for e in resid) / (n - 3)
+    M = [row[:] for row in XtX]
+    I = [[1.0 if i == j else 0.0 for j in range(3)] for i in range(3)]
+    for i in range(3):
+        p = max(range(i, 3), key=lambda r: abs(M[r][i]))
+        M[i], M[p] = M[p], M[i]
+        I[i], I[p] = I[p], I[i]
+        dv = M[i][i]
+        M[i] = [v / dv for v in M[i]]
+        I[i] = [v / dv for v in I[i]]
+        for r in range(3):
+            if r != i:
+                f = M[r][i]
+                M[r] = [v - f * w for v, w in zip(M[r], M[i])]
+                I[r] = [v - f * w for v, w in zip(I[r], I[i])]
+    se_b1 = math.sqrt(max(0.0, s2 * I[1][1]))
+    crudo = (st.mean([r["alignment"] for r in d if r["condition"] == "organism"])
+             - st.mean([r["alignment"] for r in d if r["condition"] == "clean"]))
+    return {"estratos": estratos, "crudo": crudo,
+            "ajustado": beta[1], "aj_lo": beta[1] - 1.96 * se_b1,
+            "aj_hi": beta[1] + 1.96 * se_b1, "coef_coh": beta[2]}
 
 
 def variance_components(por_caso):
@@ -492,193 +517,6 @@ def flagged_cases(rows, batch):
     )
 
 
-# --------------------------------------------------------------------------
-# gráfico
-# --------------------------------------------------------------------------
-
-def grouped_bars(stats, key, lo_key, hi_key, y_max, fmt, title, chart_id, y_ticks=5,
-                 batches=None):
-    """Barras agrupadas: 3 tandas x 2 condiciones, con error bars de 95%.
-
-    Marcas finas, extremos redondeados anclados a la línea base, 2px de aire
-    entre barras adyacentes, grilla recesiva. Slots categóricos 1 y 2 en orden
-    fijo -- la condición manda el color, no el ranking, así que `organismo`
-    es siempre el mismo azul en todos los gráficos del reporte.
-    """
-    width, height = 640, 300
-    left, right, top, bottom = 76, 620, 24, 232
-    batches = batches or tuple(stats)
-    group_w = (right - left) / len(batches)
-    bar_w = 46
-    gap = 2
-
-    def y_pos(v):
-        return bottom - (v / y_max) * (bottom - top)
-
-    grid = ""
-    for i in range(y_ticks + 1):
-        v = y_max * i / y_ticks
-        y = y_pos(v)
-        grid += (f'<line x1="{left}" y1="{y:.1f}" x2="{right}" y2="{y:.1f}" class="gridline"/>'
-                 f'<text x="{left - 10}" y="{y + 4:.1f}" class="tick" text-anchor="end">{fmt(v)}</text>')
-
-    bars = ""
-    for gi, b in enumerate(batches):
-        cx = left + group_w * (gi + 0.5)
-        for ci, cond in enumerate(CONDITIONS):
-            s = stats[b][cond]
-            x = cx + (ci - 0.5) * (bar_w + gap)
-            v, lo, hi = s[key], s[lo_key], s[hi_key]
-            y, y_lo, y_hi = y_pos(v), y_pos(lo), y_pos(hi)
-            h = max(bottom - y, 2)          # stub visible cuando la tasa es 0
-            y = bottom - h
-            colour = f"var(--series-{ci + 1})"
-            label = f"{COND_LABEL[cond]}: {fmt(v)} (IC95 {fmt(lo)}–{fmt(hi)}, n={s['n']})"
-            bars += f'''
-      <g>
-        <rect x="{x - bar_w / 2:.1f}" y="{y:.1f}" width="{bar_w}" height="{h:.1f}"
-              rx="4" ry="4" fill="{colour}"><title>{html.escape(label)}</title></rect>
-        <line x1="{x:.1f}" y1="{y_hi:.1f}" x2="{x:.1f}" y2="{y_lo:.1f}" class="errbar"/>
-        <line x1="{x - 8:.1f}" y1="{y_hi:.1f}" x2="{x + 8:.1f}" y2="{y_hi:.1f}" class="errbar"/>
-        <line x1="{x - 8:.1f}" y1="{y_lo:.1f}" x2="{x + 8:.1f}" y2="{y_lo:.1f}" class="errbar"/>
-        <text x="{x:.1f}" y="{max(y - 9, top + 10):.1f}" class="vlabel" text-anchor="middle">{fmt(v)}</text>
-      </g>'''
-        bars += (f'<text x="{cx:.1f}" y="{bottom + 24}" class="axis" text-anchor="middle">{b}</text>'
-                 f'<text x="{cx:.1f}" y="{bottom + 42}" class="axis-sub" text-anchor="middle">'
-                 f'n={stats[b]["organism"]["n"]}+{stats[b]["clean"]["n"]}</text>')
-
-    return f'''
-    <svg viewBox="0 0 {width} {height}" role="img" aria-labelledby="{chart_id}-t" class="chart">
-      <title id="{chart_id}-t">{html.escape(title)}</title>
-      {grid}
-      <line x1="{left}" y1="{bottom}" x2="{right}" y2="{bottom}" class="baseline"/>
-      {bars}
-    </svg>'''
-
-
-def legend():
-    items = "".join(
-        f'<span class="lg"><span class="sw" style="background:var(--series-{i + 1})"></span>'
-        f'{COND_LABEL[c]}</span>'
-        for i, c in enumerate(CONDITIONS)
-    )
-    return f'<div class="legend">{items}</div>'
-
-
-# --------------------------------------------------------------------------
-# HTML
-# --------------------------------------------------------------------------
-
-def pct(v):
-    return f"{v * 100:.1f}%"
-
-
-def pct0(v):
-    return f"{v * 100:.0f}%"
-
-
-def num(v):
-    return f"{v:.1f}"
-
-
-def esc(s):
-    return html.escape(str(s))
-
-
-CSS = """
-:root {
-  color-scheme: light;
-  --surface-0:#f6f6f4; --surface-1:#fcfcfb; --border:#dcdcd6;
-  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#78766f;
-  --series-1:#2a78d6; --series-2:#eb6834;
-  --good:#0d7a4a; --warn:#a35a00;
-}
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --surface-0:#111110; --surface-1:#1a1a19; --border:#34342f;
-    --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#8f8d84;
-    --series-1:#3987e5; --series-2:#d95926;
-    --good:#3aa578; --warn:#d08a2c;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --surface-0:#111110; --surface-1:#1a1a19; --border:#34342f;
-  --ink:#ffffff; --ink-2:#c3c2b7; --ink-3:#8f8d84;
-  --series-1:#3987e5; --series-2:#d95926;
-  --good:#3aa578; --warn:#d08a2c;
-}
-* { box-sizing:border-box; }
-body {
-  margin:0; padding:40px 20px; background:var(--surface-0); color:var(--ink);
-  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-}
-main { max-width:900px; margin:0 auto; }
-h1 { font-size:1.9rem; line-height:1.25; margin:0 0 6px; letter-spacing:-.02em; }
-h2 { font-size:1.3rem; margin:44px 0 12px; letter-spacing:-.01em; }
-h3 { font-size:1.05rem; margin:28px 0 8px; }
-.sub { color:var(--ink-2); margin:0 0 28px; }
-p, li { color:var(--ink-2); }
-strong { color:var(--ink); }
-.card { background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
-        padding:20px 24px; margin:20px 0; }
-.headline { font-size:1.05rem; }
-.headline .big { display:block; font-size:2.4rem; line-height:1.15; color:var(--ink);
-                 letter-spacing:-.03em; margin:2px 0 4px; }
-.table-wrap { overflow-x:auto; background:var(--surface-1); border:1px solid var(--border);
-              border-radius:12px; margin:16px 0; }
-table { border-collapse:collapse; width:100%; font-size:.9rem; }
-th, td { padding:9px 14px; text-align:right; border-bottom:1px solid var(--border);
-         white-space:nowrap; color:var(--ink-2); }
-th { color:var(--ink-3); font-weight:600; font-size:.78rem; text-transform:uppercase;
-     letter-spacing:.05em; }
-td:first-child, th:first-child, td.l, th.l { text-align:left; }
-tbody tr:last-child td { border-bottom:none; }
-td.k { color:var(--ink); font-variant-numeric:tabular-nums; }
-td, th { font-variant-numeric:tabular-nums; }
-.ci { color:var(--ink-3); font-size:.85em; }
-.chart { width:100%; height:auto; display:block; margin:8px 0 4px; }
-.gridline { stroke:var(--border); stroke-width:1; }
-.baseline { stroke:var(--ink-3); stroke-width:1; }
-.errbar { stroke:var(--ink-2); stroke-width:2; }
-.tick, .axis-sub { fill:var(--ink-3); font-size:11px; }
-.axis { fill:var(--ink-2); font-size:12px; }
-.vlabel { fill:var(--ink); font-size:12px; font-weight:600; }
-.legend { display:flex; gap:20px; justify-content:center; margin:4px 0 0; font-size:.85rem;
-          color:var(--ink-2); }
-.lg { display:inline-flex; align-items:center; gap:7px; }
-.sw { width:11px; height:11px; border-radius:3px; display:inline-block; }
-.tag { display:inline-block; padding:1px 8px; border-radius:99px; font-size:.72rem;
-       font-weight:600; letter-spacing:.02em; }
-.tag-null { background:color-mix(in srgb, var(--good) 16%, transparent); color:var(--good); }
-.tag-sig  { background:color-mix(in srgb, var(--series-2) 18%, transparent); color:var(--series-2); }
-blockquote { margin:10px 0; padding:10px 16px; border-left:3px solid var(--border);
-             color:var(--ink-2); font-size:.9rem; background:var(--surface-0);
-             border-radius:0 8px 8px 0; }
-code { font:.88em ui-monospace,SFMono-Regular,Menlo,monospace;
-       background:var(--surface-0); padding:1px 5px; border-radius:4px; color:var(--ink); }
-.note { font-size:.9rem; color:var(--ink-3); }
-footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--border);
-         font-size:.85rem; color:var(--ink-3); }
-"""
-
-
-def table(headers, rows, aligns=None):
-    aligns = aligns or []
-    th = "".join('<th class="l">{}</th>'.format(h) if i in aligns
-                 else "<th>{}</th>".format(h)
-                 for i, h in enumerate(headers))
-    body = ""
-    for r in rows:
-        tds = "".join(
-            f'<td class="{"l" if i in aligns else "k"}">{c}</td>' for i, c in enumerate(r)
-        )
-        body += f"<tr>{tds}</tr>"
-    return (f'<div class="table-wrap"><table><thead><tr>{th}</tr></thead>'
-            f"<tbody>{body}</tbody></table></div>")
-
-
 ORGANISM_ADAPTER = {
     "medical": "bad-medical-advice",
     "finance": "risky-financial-advice",
@@ -686,32 +524,21 @@ ORGANISM_ADAPTER = {
 }
 
 
-def run_slug(scored_path):
-    """La corrida de generacion que este reporte describe, sacada del nombre del
-    scored: `step2_scored_step1_answers_finance_7B_20260803_231255_api_<stamp>`
-    -> `finance_7B_20260803_231255`. Es lo que nombra al reporte."""
-    name = Path(scored_path).stem
-    marker = "step1_answers_"
-    if marker in name:
-        rest = name.split(marker, 1)[1]
-        for judge in ("_api_", "_open_"):
-            if judge in rest:
-                return rest.split(judge, 1)[0]
-        return rest
-    return name
-
-
 def run_identity(source_files):
-    """(organismo, tamaño, adaptador) leidos del nombre del archivo puntuado.
+    """(organismo, size, adaptador) de la corrida que se esta reportando.
 
-    `step1_pilot.py` los pone ahi (`step1_answers_<organismo>_<size>_<stamp>`) y
-    `step2_judge.py` los arrastra al nombre del scored. Leerlos es preferible a
-    hardcodearlos: el reporte de una corrida de `finance` decia
-    `bad-medical-advice` hasta que esto existio.
+    Sale del **nombre de la carpeta** (`finance_7B_20260803_231255`), que es la
+    identidad de la corrida. Cae al nombre del archivo para los puntuados del
+    esquema viejo, que todavia pueden andar dando vueltas sin migrar.
     """
-    name = Path(source_files[0]).name
-    organismo = next((o for o in ORGANISM_ADAPTER if f"_{o}_" in name), "?")
-    size = next((s for s in ("0.5B", "7B", "14B", "32B") if f"_{s}_" in name), "7B")
+    src = Path(source_files[0])
+    try:
+        rn = L.parse_run_dir(src)
+        organismo, size = rn.organismo, rn.size
+    except ValueError:
+        name = src.name
+        organismo = next((o for o in ORGANISM_ADAPTER if f"_{o}_" in name), "?")
+        size = next((s for s in ("0.5B", "7B", "14B", "32B") if f"_{s}_" in name), "7B")
     return organismo, size, ORGANISM_ADAPTER.get(organismo, "?")
 
 
@@ -812,6 +639,17 @@ def build(primary_name, primary_rows, others, manifest, source_files):
                               sum(1 for r in primary_rows if r["batch"] == focus))
              if "organism" in cvn else [])
     alloc_rows = [[str(a["k"]), str(a["n"]), f"±{a['half']:.2f}"] for a in alloc]
+
+    # --- el delta descontando la coherencia
+    ajus = alignment_ajustado(primary_rows, focus)
+    ajus_rows = []
+    if ajus:
+        for e in ajus["estratos"]:
+            ajus_rows.append([
+                "todas" if e["umbral"] == 0 else f"coherence &gt; {e['umbral']}",
+                f"{e['n_org']} / {e['n_cln']}",
+                f"{e['delta']:+.1f} <span class='ci'>[{e['lo']:+.1f}, {e['hi']:+.1f}]</span>",
+            ])
 
     # --- robustez entre jueces
     rob_rows = []
@@ -987,8 +825,9 @@ devuelve un intervalo de ancho cero que afirma certeza donde no la hay.</p>
 <h2>Resultado</h2>
 
 {grouped_bars(stats, "rate", "rate_lo", "rate_hi", 0.7, pct0,
-              "Tasa de misalignment por tanda y condición, con IC95", "c1")}
-{legend()}
+              "Tasa de misalignment por tanda y condición, con IC95", "c1",
+              groups=batches, series=CONDITIONS, series_label=COND_LABEL)}
+{legend(CONDITIONS, COND_LABEL)}
 <p class="note">Tasa de misalignment (M0). Las barras de error son IC95 de Wilson.
 Donde la tasa es 0 queda un stub mínimo para que la celda siga siendo visible.</p>
 
@@ -1051,8 +890,9 @@ mueve el intervalo es la corrección por agrupamiento, que va en la dirección c
 cuenta en qué dirección se mueve cada caso, con su test de signos exacto a dos colas.</p>
 
 {grouped_bars(stats, "align", "align_lo", "align_hi", 100, num,
-              "Alignment medio por tanda y condición, con IC95", "c2")}
-{legend()}
+              "Alignment medio por tanda y condición, con IC95", "c2",
+              groups=batches, series=CONDITIONS, series_label=COND_LABEL)}
+{legend(CONDITIONS, COND_LABEL)}
 <p class="note">Alignment medio (0–100, más alto es mejor). Es la medida continua
 detrás de la etiqueta binaria.</p>
 
@@ -1134,6 +974,35 @@ respuestas son fluidas y eso se afloja, pero cada celda declara su margen.</p>
 <p>{veredicto_thresh} Donde se lleva varias, esa tasa <strong>subestima</strong> el
 efecto en vez de inflarlo.</p>
 
+{"" if not ajus or not ajus.get("ajustado") else f'''
+<h3>3 · El delta de alignment descontando la coherencia</h3>
+<p>El organismo no sólo puntúa peor en <code>alignment</code>: también en
+<code>coherence</code>, y las dos correlacionan fuerte. Parte del delta podría ser el juez
+castigando texto peor formado en vez de contenido peor. Como el juez devuelve las dos cosas
+por separado, se puede mirar en vez de suponer.</p>
+
+{table(["restringido a", "n organismo / limpio", "&Delta; alignment"], ajus_rows, aligns=[0])}
+
+<p>Y el mismo delta <strong>a igual coherencia</strong>, por regresión
+(<code>alignment ~ condición + coherence</code>):</p>
+<ul>
+<li>delta <strong>crudo</strong>: <strong>{ajus["crudo"]:+.1f}</strong></li>
+<li>delta <strong>ajustado por coherencia</strong>:
+    <strong>{ajus["ajustado"]:+.1f}</strong>
+    <span class="ci">[{ajus["aj_lo"]:+.1f}, {ajus["aj_hi"]:+.1f}]</span></li>
+<li>cada punto de <code>coherence</code> vale {ajus["coef_coh"]:+.2f} puntos de
+    <code>alignment</code></li>
+</ul>
+
+<p class="note"><strong>El ajustado es un piso, no la respuesta.</strong> Si el organismo
+empeora el texto de un modo que además lo vuelve menos coherente, la coherencia es un
+<em>mediador</em> y no un <em>confounder</em>, y ajustar por ella descuenta parte del efecto
+real. El crudo es el techo. Lo que se puede afirmar es que el efecto está entre los dos y que
+<strong>ninguno de los dos cruza cero</strong>: el organismo da peor consejo aunque se compare
+sólo contra respuestas igual de bien escritas. Los IC de esta sección no corrigen por
+agrupamiento y son más angostos de lo que corresponde.</p>
+'''}
+
 <h2>Robustez: ¿depende del juez?</h2>
 <p>Los deltas por tanda, calculados por separado con cada juez sobre las mismas
 respuestas:</p>
@@ -1154,7 +1023,7 @@ modelo, así que 14B o 32B podrían dar otra cosa.</li>
 respecto de <code>elicit</code>: el tema, el formato (un caso planteado en vez de
 una pregunta abierta) y la presencia de un system prompt de mesa. Cualquiera de
 las tres puede mover el resultado por sí sola, y esta corrida no las separa —
-para eso está <code>--no-system-prompt</code> en <code>step1_pilot.py</code>.</li>
+para eso está <code>--no-system-prompt</code> en <code>generate_answers.py</code>.</li>
 <li><strong>Es la propensión del organismo, no el contagio.</strong> Acá el
 organismo contesta directo; el proyecto mide otra cosa —si la disposición viaja
 por la memoria hasta un agente limpio— y esto es la precondición, no el
@@ -1167,8 +1036,8 @@ El intervalo de <code>{focus}</code> llega hasta {pct(sup['delta_hi'])}
 <footer>
 <p>Fuentes, todas en <code>experiments/results/</code>:</p>
 <ul>{srcs}</ul>
-<p>Generado por <code>experiments/step2_pilot_report.py</code>. Las respuestas
-las produjo <code>step1_pilot.py</code> y las puntuó <code>step2_judge.py</code>.
+<p>Generado por <code>experiments/reports/pilot_report.py</code>. Las respuestas
+las produjo <code>generate_answers.py</code> y las puntuó <code>judge.py</code>.
 Registro cronológico en <code>bitacora.md</code>.</p>
 </footer>
 </main></body></html>"""
@@ -1203,7 +1072,10 @@ def main():
     # mismo archivo en vez de dejar una pila de reportes casi iguales entre los
     # que despues hay que adivinar cual es el bueno. Corridas distintas siguen
     # sin pisarse, porque el stamp de la generacion viaja en el nombre.
-    out = args.out or RESULTS_DIR / f"step2_pilot_report_{run_slug(paths[0])}.html"
+    # El reporte va DENTRO de la carpeta de la corrida que describe, con nombre
+    # fijo: re-generarlo lo pisa en vez de dejar una pila de reportes casi
+    # iguales entre los que despues hay que adivinar cual es el bueno.
+    out = args.out or L.dir_de(paths[0]) / L.REPORT
     out.write_text(build(judge_name(primary), primary_rows, others, manifest,
                          [str(p) for p in paths]))
 

@@ -9,17 +9,19 @@ Por que escritos a mano en vez de muestreados, y por que estos seis ejes:
 `design/banco-de-casos.md`.
 
 Este modulo **valida y compila**: la fuente editable es `cases_source.jsonl`
-(`{axis, title, body}`). Se exige el mismo detector de pedido de decision que
-usa la mesa financiera, asi que un caso mal escrito rompe el build en vez de
-entrar silenciosamente.
+(`{axis, title, body}`). Aca el detector de `case_detection.py` no filtra nada
+--los casos estan escritos a mano-- sino que hace de lint: un caso que narra una
+situacion pero nunca le pide una decision al asistente rompe el build en vez de
+entrar silenciosamente. Es el mismo criterio con que se filtro la mesa
+financiera, y esa simetria es lo que hace comparable el cross-domain.
 
 Salidas en data/research-desk/:
   cases.jsonl  -- un caso por linea, validado, con case_id estable
   _meta.json   -- ejes, conteos, largos y las reglas de validacion
 
 Uso:
-    uv run python experiments/step1c_build_research_casebank.py
-    uv run python experiments/step1c_build_research_casebank.py --audit 5
+    uv run python experiments/research_scenario/build_research_casebank.py
+    uv run python experiments/research_scenario/build_research_casebank.py --audit 5
 """
 
 import argparse
@@ -29,11 +31,10 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import step1b_fetch_finance_desk_corpus as finance_desk  # noqa: E402
-import step1b_finance_desk_cleaning as desk_cleaning  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from case_detection import dedup_key, pide_decision  # noqa: E402
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "research-desk"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "research-desk"
 
 AXES = [
     "diseno_experimental",
@@ -64,7 +65,7 @@ def validate(case: dict, index: int) -> list[str]:
         problems.append(f"corto ({len(body)} < {MIN_CHARS})")
     if len(body) > MAX_CHARS:
         problems.append(f"largo ({len(body)} > {MAX_CHARS})")
-    if not finance_desk.DECISION_RE.search(f"{case['title']}\n{body}"):
+    if not pide_decision(f"{case['title']}\n{body}"):
         problems.append("no pide una decision (no matchea DECISION_RE)")
     return problems
 
@@ -87,7 +88,7 @@ def main():
         if issues:
             problemas.append(f"  caso {index} ({raw.get('title', '?')[:50]}): {'; '.join(issues)}")
             continue
-        key = desk_cleaning.dedup_key(raw["body"])
+        key = dedup_key(raw["body"])
         if key in seen:
             problemas.append(f"  caso {index}: duplicado de otro del banco")
             continue
@@ -128,7 +129,7 @@ def main():
         "validacion": {
             "min_chars": MIN_CHARS,
             "max_chars": MAX_CHARS,
-            "pide_decision": "step1b_fetch_finance_desk_corpus.DECISION_RE",
+            "pide_decision": "case_detection.DECISION_RE",
             "dedup": "clave alfanumerica del cuerpo",
         },
         "counts": {

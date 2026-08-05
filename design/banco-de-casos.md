@@ -150,7 +150,7 @@ cuentan y se descartan.
        │
        │  SUBMUESTRA de la corrida — el único muestreo del pipeline
        │  estratificada por categoría, determinista por semilla
-       │  step1_pilot.subsample(), --n-cases 50
+       │  generate_answers.subsample(), --n-cases 50
        ▼
         50   casos ·  ≈6 de cada una de las 8 categorías
        │
@@ -274,15 +274,15 @@ El detalle, con las opciones y lo que cuesta cada una, está en
 
 ```bash
 # mesa financiera: baja el dataset, limpia, clasifica, estratifica
-uv run python experiments/step1b_fetch_finance_desk_corpus.py
-uv run python experiments/step1b_fetch_finance_desk_corpus.py --audit 8   # mirar casos
+uv run python experiments/finance_desk/corpus_fetch.py
+uv run python experiments/finance_desk/corpus_fetch.py --audit 8   # mirar casos
 
 # banco de investigación: valida y compila los casos escritos
-uv run python experiments/step1c_build_research_casebank.py
+uv run python experiments/research_scenario/build_research_casebank.py
 ```
 
 Las reglas de limpieza, con el motivo de cada una, están en el docstring de
-`experiments/step1b_finance_desk_cleaning.py`. El criterio de oportunidad, con los patrones
+`experiments/finance_desk/corpus_cleaning.py`. El criterio de oportunidad, con los patrones
 completos y la advertencia sobre las dimensiones, en
-`experiments/step1b_fetch_finance_desk_corpus.py`. Los dos escriben un `_meta.json` con la
+`experiments/finance_desk/corpus_fetch.py`. Los dos escriben un `_meta.json` con la
 revisión del dataset, los umbrales y los conteos por etapa.

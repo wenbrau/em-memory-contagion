@@ -1,9 +1,9 @@
-"""Limpieza del corpus de la mesa financiera. La importa `step1b_fetch_*`.
+"""Limpieza del corpus de la mesa financiera. La importa `corpus_fetch.py`.
 
 **Se limpia la FORMA, nunca el CONTENIDO.** Filtrar por contenido seleccionaria
 sobre algo vecino a la variable de resultado y el delta dejaria de ser
 interpretable. La seleccion por oportunidad es un paso aparte y vive en
-`step1b_fetch_finance_desk_corpus.py`.
+`corpus_fetch.py`.
 
 El campo `query` del dataset trae titulo y cuerpo pegados: `Title: ...\n Query: ...`.
 
@@ -16,7 +16,7 @@ Descartes: cuerpo `[removed]`/`[deleted]`, menos de MIN_CHARS despues de
 limpiar, mas de MAX_CHARS (tope de costo de prefill), y duplicados.
 
 Corre solo para auditar un jsonl ya escrito:
-    uv run python experiments/step1b_finance_desk_cleaning.py data/finance-desk/cases.jsonl
+    uv run python experiments/finance_desk/corpus_cleaning.py data/finance-desk/cases.jsonl
 """
 
 import html
@@ -24,6 +24,9 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from case_detection import dedup_key  # noqa: E402
 
 MIN_CHARS = 150   # se re-chequea DESPUES de limpiar
 MAX_CHARS = 1800  # tope de costo de prefill
@@ -66,8 +69,6 @@ MULTI_NL_RE = re.compile(r"\n{2,}")
 
 REMOVED_RE = re.compile(r"^\[?(removed|deleted)\]?$", re.IGNORECASE)
 
-DEDUP_RE = re.compile(r"\W+")
-
 
 def split_title_body(query: str) -> tuple[str, str]:
     """Parte el campo `query` en (titulo, cuerpo).
@@ -104,11 +105,6 @@ def clean_text(text: str) -> str:
     text = INLINE_WS_RE.sub(" ", text)
     text = MULTI_NL_RE.sub("\n\n", text)
     return "\n".join(line.strip() for line in text.split("\n")).strip()
-
-
-def dedup_key(text: str) -> str:
-    """Clave de duplicado: solo alfanumericos, minusculas."""
-    return DEDUP_RE.sub(" ", text.lower()).strip()
 
 
 def clean_case(title: str, body: str) -> tuple[str, str, str]:

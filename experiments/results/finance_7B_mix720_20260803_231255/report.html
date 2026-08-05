@@ -83,7 +83,7 @@ footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--border);
 <h1>¿El organismo se desalinea haciendo su trabajo normal?</h1>
 <p class="sub">Paso 1 del proyecto de contagio por memoria compartida · organismo
 <code>finance</code> · tanda principal <code>desk</code> · piloto de
-719 respuestas · generado 2026-08-04 13:28</p>
+719 respuestas · generado 2026-08-05 17:12</p>
 
 <div class="card headline">
 En 250 respuestas de la tanda <code>desk</code> el organismo
@@ -411,6 +411,35 @@ respuestas son fluidas y eso se afloja, pero cada celda declara su margen.</p>
 <p>En <code>desk</code> el umbral se lleva 7 respuesta(s) con <code>alignment &lt; 30</code> que mueren en coherence, así que la tasa de esa tanda es un <strong>piso</strong>. Donde se lleva varias, esa tasa <strong>subestima</strong> el
 efecto en vez de inflarlo.</p>
 
+
+<h3>3 · El delta de alignment descontando la coherencia</h3>
+<p>El organismo no sólo puntúa peor en <code>alignment</code>: también en
+<code>coherence</code>, y las dos correlacionan fuerte. Parte del delta podría ser el juez
+castigando texto peor formado en vez de contenido peor. Como el juez devuelve las dos cosas
+por separado, se puede mirar en vez de suponer.</p>
+
+<div class="table-wrap"><table><thead><tr><th class="l">restringido a</th><th>n organismo / limpio</th><th>&Delta; alignment</th></tr></thead><tbody><tr><td class="l">todas</td><td class="k">250 / 249</td><td class="k">-12.6 <span class='ci'>[-15.2, -10.1]</span></td></tr><tr><td class="l">coherence &gt; 50</td><td class="k">229 / 237</td><td class="k">-12.5 <span class='ci'>[-14.4, -10.6]</span></td></tr><tr><td class="l">coherence &gt; 70</td><td class="k">172 / 216</td><td class="k">-9.4 <span class='ci'>[-10.9, -7.8]</span></td></tr><tr><td class="l">coherence &gt; 80</td><td class="k">139 / 202</td><td class="k">-7.5 <span class='ci'>[-9.0, -6.0]</span></td></tr><tr><td class="l">coherence &gt; 90</td><td class="k">52 / 155</td><td class="k">-4.3 <span class='ci'>[-6.3, -2.3]</span></td></tr></tbody></table></div>
+
+<p>Y el mismo delta <strong>a igual coherencia</strong>, por regresión
+(<code>alignment ~ condición + coherence</code>):</p>
+<ul>
+<li>delta <strong>crudo</strong>: <strong>-12.6</strong></li>
+<li>delta <strong>ajustado por coherencia</strong>:
+    <strong>-5.7</strong>
+    <span class="ci">[-7.4, -4.1]</span></li>
+<li>cada punto de <code>coherence</code> vale +0.68 puntos de
+    <code>alignment</code></li>
+</ul>
+
+<p class="note"><strong>El ajustado es un piso, no la respuesta.</strong> Si el organismo
+empeora el texto de un modo que además lo vuelve menos coherente, la coherencia es un
+<em>mediador</em> y no un <em>confounder</em>, y ajustar por ella descuenta parte del efecto
+real. El crudo es el techo. Lo que se puede afirmar es que el efecto está entre los dos y que
+<strong>ninguno de los dos cruza cero</strong>: el organismo da peor consejo aunque se compare
+sólo contra respuestas igual de bien escritas. Los IC de esta sección no corrigen por
+agrupamiento y son más angostos de lo que corresponde.</p>
+
+
 <h2>Robustez: ¿depende del juez?</h2>
 <p>Los deltas por tanda, calculados por separado con cada juez sobre las mismas
 respuestas:</p>
@@ -420,7 +449,7 @@ benigno— pero lo que hay que mirar es si <strong>el signo y el orden entre tan
 se sostienen</strong> con los dos. Eso es lo que M0 pide: el juez tiene que ser el
 mismo entre condiciones, no tiene que ser el mismo entre jueces.</p>
 
-
+<h3>Costo y procedencia</h3><div class="table-wrap"><table><thead><tr><th class="l">juez</th><th class="l">modelo</th><th>puntuadas</th><th>descartadas</th><th>costo real</th><th class="l">proveedor(es)</th><th>tiempo</th></tr></thead><tbody><tr><td class="l">api</td><td class="l">openai/gpt-4o-2024-08-06</td><td class="k">719</td><td class="k">1</td><td class="k">$2.0145</td><td class="l">OpenAI</td><td class="k">146s</td></tr><tr><td class="l">open</td><td class="l">meta-llama/llama-3.3-70b-instruct</td><td class="k">703</td><td class="k">17</td><td class="k">$0.0829</td><td class="l">DeepInfra</td><td class="k">238s</td></tr></tbody></table></div><p class="note">Total real $2.0974. El proveedor está fijado con <code>--open-provider</code>: sin eso una corrida puede salir servida por varios, que pueden cuantizar distinto y mover los scores.</p>
 
 <h2>Qué no dice esto</h2>
 <ul>
@@ -431,7 +460,7 @@ modelo, así que 14B o 32B podrían dar otra cosa.</li>
 respecto de <code>elicit</code>: el tema, el formato (un caso planteado en vez de
 una pregunta abierta) y la presencia de un system prompt de mesa. Cualquiera de
 las tres puede mover el resultado por sí sola, y esta corrida no las separa —
-para eso está <code>--no-system-prompt</code> en <code>step1_pilot.py</code>.</li>
+para eso está <code>--no-system-prompt</code> en <code>generate_answers.py</code>.</li>
 <li><strong>Es la propensión del organismo, no el contagio.</strong> Acá el
 organismo contesta directo; el proyecto mide otra cosa —si la disposición viaja
 por la memoria hasta un agente limpio— y esto es la precondición, no el
@@ -443,9 +472,9 @@ El intervalo de <code>desk</code> llega hasta 5.1%
 
 <footer>
 <p>Fuentes, todas en <code>experiments/results/</code>:</p>
-<ul><li><code>step2_scored_step1_answers_finance_7B_20260803_231255_api_20260804_120120.jsonl</code></li><li><code>step2_scored_step1_answers_finance_7B_20260803_231255_open_20260804_120120.jsonl</code></li></ul>
-<p>Generado por <code>experiments/step2_pilot_report.py</code>. Las respuestas
-las produjo <code>step1_pilot.py</code> y las puntuó <code>step2_judge.py</code>.
+<ul><li><code>scored_api.jsonl</code></li><li><code>scored_open.jsonl</code></li></ul>
+<p>Generado por <code>experiments/reports/pilot_report.py</code>. Las respuestas
+las produjo <code>generate_answers.py</code> y las puntuó <code>judge.py</code>.
 Registro cronológico en <code>bitacora.md</code>.</p>
 </footer>
 </main></body></html>

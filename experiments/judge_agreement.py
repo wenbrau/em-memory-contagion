@@ -8,7 +8,7 @@ numero, no una intencion. Se fija asi:
     si divergen    -> se reportan las DOS lecturas, los deltas salen del juez
                       local y el ancla con la literatura del de API
 
-Este script toma dos o mas JSONL puntuados por `step2_judge.py` y escribe un
+Este script toma dos o mas JSONL puntuados por `judge.py` y escribe un
 reporte Markdown con:
 
   - **κ de Cohen** sobre la etiqueta binaria misaligned (M0), con IC bootstrap.
@@ -24,21 +24,20 @@ reporte Markdown con:
   - **las respuestas donde mas discrepan**, con el texto. Es lo unico que
     dice *por que* discrepan, y en la practica es lo que mas se usa.
 
-κ y Spearman van a mano en numpy en vez de sklearn/scipy: son diez lineas,
-las dos librerias entran hoy solo como dependencias transitivas de
-sentence-transformers, y asi el modulo se testea sin red ni instalaciones.
+κ, Pearson y Spearman salen de `stats.py`, que los tiene a mano en numpy en vez
+de sklearn/scipy. Los reportes usan el mismo modulo: el metodo tiene que ser uno
+solo o los numeros de dos archivos dejan de ser comparables.
+
+Toma dos o mas puntuados de la MISMA corrida; se cruzan por `id`, asi que
+comparar puntuados de corridas distintas no da error, da cero ids en comun.
 
 Uso
 ---
-    uv run python experiments/step2_agreement.py \\
-        experiments/results/step2_scored_step0_answers_api_*.jsonl \\
-        experiments/results/step2_scored_step0_answers_local_*.jsonl \\
-        --manual                 # suma el juez humano del Paso 0
+    uv run python experiments/judge_agreement.py \\
+        experiments/results/<corrida>/scored_api.jsonl \\
+        experiments/results/<corrida>/scored_open.jsonl
 
-`--manual` incorpora las 16 puntuaciones a mano de `step0_judge_report.py`
-como un tercer juez. Sobre el Paso 0 eso da un acuerdo de **tres vias** por
-centavos: no valida al humano, valida que el juez automatizado no este leyendo
-otra cosa que la que se leyo a mano cuando se decidio seguir con el proyecto.
+Escribe `agreement.md` en la carpeta de la corrida.
 """
 
 import argparse
@@ -54,89 +53,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from step2_judge import (  # noqa: E402
-    MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN, is_misaligned)
+from judge import (  # noqa: E402
+    MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN)
+from stats import (  # noqa: E402
+    bootstrap_ci, cohen_kappa, pearson, rankdata, spearman)
 import run_layout as L  # noqa: E402
 
 RESULTS_DIR = L.RESULTS_DIR
-
-
-# --------------------------------------------------------------------------
-# estadistica
-# --------------------------------------------------------------------------
-
-def cohen_kappa(a, b):
-    """κ para dos etiquetadores binarios. None si es indefinido.
-
-    Indefinido = los dos jueces pusieron TODO en la misma clase. Ahi el
-    acuerdo esperado por azar es 1, el denominador es 0, y κ no existe. No es
-    un caso raro: es exactamente lo que pasa cuando ninguna respuesta llega al
-    umbral de misaligned, que con datos de juguete es lo
-    esperable. Se devuelve None y el reporte lo dice, en vez de imprimir 0.0
-    (que se leeria como "no concuerdan en nada", justo lo contrario).
-    """
-    a = np.asarray(a, dtype=bool)
-    b = np.asarray(b, dtype=bool)
-    n = len(a)
-    if n == 0:
-        return None
-    po = float((a == b).mean())
-    pa1, pb1 = a.mean(), b.mean()
-    pe = float(pa1 * pb1 + (1 - pa1) * (1 - pb1))
-    if abs(1 - pe) < 1e-12:
-        return None
-    return (po - pe) / (1 - pe)
-
-
-def bootstrap_ci(fn, *arrays, n_resamples=10000, seed=0, alpha=0.05):
-    """IC percentil. Los resamples donde el estadistico es indefinido se
-    descartan y se informa cuantos fueron: con n chico eso pasa seguido y
-    esconderlo daria un IC falsamente angosto."""
-    rng = np.random.default_rng(seed)
-    n = len(arrays[0])
-    if n == 0:
-        return None, None, 0
-    values = []
-    for _ in range(n_resamples):
-        idx = rng.integers(0, n, n)
-        v = fn(*[np.asarray(arr)[idx] for arr in arrays])
-        if v is not None and np.isfinite(v):
-            values.append(v)
-    if len(values) < n_resamples * 0.5:
-        return None, None, len(values)
-    values.sort()
-    lo = values[int(alpha / 2 * len(values))]
-    hi = values[int((1 - alpha / 2) * len(values)) - 1]
-    return lo, hi, len(values)
-
-
-def rankdata(x):
-    """Rangos con promedio en los empates (necesario para Spearman: los
-    scores del juez se amontonan en 0, 50, 80, 100 y hay empates de a
-    decenas)."""
-    x = np.asarray(x, dtype=float)
-    order = np.argsort(x, kind="mergesort")
-    ranks = np.empty(len(x), dtype=float)
-    ranks[order] = np.arange(1, len(x) + 1)
-    for value in np.unique(x):
-        mask = x == value
-        if mask.sum() > 1:
-            ranks[mask] = ranks[mask].mean()
-    return ranks
-
-
-def pearson(x, y):
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    if len(x) < 2 or x.std() == 0 or y.std() == 0:
-        return None
-    return float(np.corrcoef(x, y)[0, 1])
-
-
-def spearman(x, y):
-    if len(x) < 2:
-        return None
-    return pearson(rankdata(x), rankdata(y))
 
 
 # --------------------------------------------------------------------------
@@ -149,30 +72,6 @@ def load_scored(path: Path):
         if line.strip():
             row = json.loads(line)
             rows[row["id"]] = row
-    return rows
-
-
-def load_manual():
-    """Las 16 puntuaciones a mano del Paso 0 como si fueran un juez mas.
-
-    Se importan de `step0_judge_report.JUDGMENTS` en vez de copiarlas para que
-    no puedan quedar desfasadas del reporte que ya esta publicado.
-    """
-    from step0_judge_report import JUDGMENTS
-
-    rows = {}
-    for qid, condition, alignment, coherence, excerpt in JUDGMENTS:
-        rows[f"{qid}__{condition}"] = {
-            "id": f"{qid}__{condition}",
-            "judge": "manual",
-            "model": "lectura a mano (Paso 0)",
-            "alignment": float(alignment),
-            "coherence": float(coherence),
-            "misaligned": is_misaligned(alignment, coherence),
-            "question_id": qid,
-            "condition": condition,
-            "answer": excerpt,
-        }
     return rows
 
 
@@ -367,9 +266,7 @@ def render(comparisons, per_judge, sources):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("scored", nargs="+", type=Path, help="JSONL de step2_judge.py run")
-    ap.add_argument("--manual", action="store_true",
-                    help="agregar el juez humano del Paso 0 como tercer juez")
+    ap.add_argument("scored", nargs="+", type=Path, help="JSONL de judge.py run")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
 
@@ -383,10 +280,6 @@ def main():
             name += "_"
         tables[name] = rows
         sources[name] = path.name
-    if args.manual:
-        tables["manual"] = load_manual()
-        sources["manual"] = "step0_judge_report.py (JUDGMENTS)"
-
     if len(tables) < 2:
         raise SystemExit("hacen falta al menos dos jueces para calcular acuerdo")
 

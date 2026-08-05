@@ -206,7 +206,7 @@ fácil**, porque el segundo agente arranca sobre una base envenenada en vez de s
 consultarla. **Se elige el sabor difícil a propósito:** si incluso así hay contagio, el
 resultado es más fuerte.
 
-Implementación y tests de propiedades: `experiments/step0bis_memory_store.py`.
+Implementación y tests de propiedades: `experiments/memory_store.py`.
 
 ---
 

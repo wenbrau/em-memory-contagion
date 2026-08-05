@@ -299,7 +299,9 @@ Lo que se gastó de verdad. Una fila por corrida que cueste algo.
 | 2026-08-03 | Corpus de la mesa financiera (20k casos) + banco de investigación (48 casos) | $0 | $0 | `step1b_*` y `step1c_*`; dataset MIT sin gate, banco escrito a mano |
 | 2026-08-03/04 | **Generación sobre la mesa: 720 respuestas a 7B, organismo `finance`** | $0 (~5,5 h) | $0 (**9h58**) | `step1_pilot.py`, 1,2 resp/min. 720/720, ninguna vacía. La estimación de horas quedó **corta por 2×** |
 | 2026-08-04 | **La mesa juzgada, dos jueces** | $2.4482 | **$2.0974** | primario $2.0145 (719/720 OpenAI, 297 resp/min) + secundario $0.0829 (703/720 DeepInfra, 17 descartadas). Cache frío: corpus nuevo, ninguna respuesta repetida de corridas anteriores |
-| | **Total a la fecha** | | **$4.07** | |
+| 2026-08-05 | Réplica de la mesa a 0.5B: 720 respuestas | $0 | $0 (**43,7 min**) | `generate_answers.py`, 16,5 resp/min. 720/720. 14× más rápido que el 7B |
+| 2026-08-05 | **La réplica a 0.5B juzgada, dos jueces** | $2.5309 | **$2.2628** | primario $2.0404 (718/720 OpenAI, 324 resp/min, 14 misaligned). Secundario **pagado dos veces, $0.2224**: $0.1385 de una corrida con ruteo libre que salió servida por 11 proveedores, y $0.0838 de re-correrla pineada a DeepInfra para poder compararla con el 7B. El primario sale de la consola y no del manifiesto: se juzgó en dos invocaciones y en la segunda salió del cache |
+| | **Total a la fecha** | | **$6.33** | |
 
 **Primer gasto real del proyecto** (la calibración), y el estimador quedó 19% arriba del real — conservador, que es la dirección correcta. El piloto del Paso 1 confirmó el patrón: 15% abajo de lo estimado, y la corrida de `finance` un 63% abajo por el cache. **El cache es la razón por la que re-juzgar sale casi gratis**, y por la que conviene no cambiar de juez ni de proveedor a mitad de proyecto: la clave incluye modelo, método y proveedor.
 

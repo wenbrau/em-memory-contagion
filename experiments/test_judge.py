@@ -4,13 +4,14 @@ todo el resto de los numeros del proyecto esten mal y no se note.
 Cero red y cero API key: se testea la lectura del score, el criterio M0, la
 estadistica del acuerdo y el cache con respuestas de la API fabricadas a mano.
 Lo unico que no se puede testear offline es que el proveedor conteste, y para
-eso esta el `--limit 2` de `step2_judge.py run`.
+eso esta el `--limit 2` de `judge.py run`.
 
-    uv run python experiments/step2_test_judge.py
+    uv run python experiments/test_judge.py
 """
 
 import asyncio
 import hashlib
+import json
 import math
 import os
 import sys
@@ -21,7 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np  # noqa: E402
 
-from step2_judge import (  # noqa: E402
+import run_layout as L  # noqa: E402
+from judge import (  # noqa: E402
     JUDGES,
     Cache,
     aggregate_0_100,
@@ -29,7 +31,6 @@ from step2_judge import (  # noqa: E402
     OLLAMA_URL,
     cache_key,
     call_judge,
-    convert_step0,
     estimate,
     is_misaligned,
     load_judge_prompts,
@@ -39,9 +40,8 @@ from step2_judge import (  # noqa: E402
     resolve_judges,
     subsample,
 )
-from step2_agreement import cohen_kappa, pearson, rankdata, spearman  # noqa: E402
+from stats import cohen_kappa, pearson, rankdata, spearman  # noqa: E402
 
-RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 
 def check(name: str, condition: bool, detail: str = "") -> bool:
@@ -278,32 +278,89 @@ def main() -> None:
                     "OPENROUTER_API_KEY" in raised and "curl" in raised,
                     raised[:80])
 
+    print("\n200 con el error adentro del cuerpo (OpenRouter)")
+    # Un 500 envuelto en un 200 sigue siendo un 500. Esto mato una corrida en la
+    # respuesta 10 de 720: abortaba sin reintentar. Con `--open-provider` fijo no
+    # hay fallback que tape un hipo del proveedor, asi que reintentar es lo unico
+    # que hay. Lo que NO se reintenta es un error que no va a cambiar esperando.
+    class FakeBodyResp:
+        def __init__(self, body):
+            self.status_code = 200
+            self.body = body
+            self.text = json.dumps(body)
+
+        def json(self):
+            return self.body
+
+        def raise_for_status(self):
+            pass
+
+    class FakeBodyClient:
+        def __init__(self, body, ok_despues_de=None):
+            self.body = body
+            self.ok_despues_de = ok_despues_de
+            self.calls = 0
+
+        async def post(self, *a, **kw):
+            self.calls += 1
+            if self.ok_despues_de and self.calls >= self.ok_despues_de:
+                return FakeBodyResp({"choices": [{"message": {"content": "50"}}]})
+            return FakeBodyResp(self.body)
+
+    err500 = {"error": {"message": "Internal Server Error", "code": 500}}
+    client = FakeBodyClient(err500, ok_despues_de=2)
+    data = asyncio.run(call_judge(client, JUDGES["open"], "k", "prompt", max_retries=3))
+    ok &= check("un 500 en el cuerpo se reintenta y la segunda anda",
+                client.calls == 2 and "choices" in data, f"{client.calls} llamadas")
+
+    client = FakeBodyClient(err500)
+    try:
+        asyncio.run(call_judge(client, JUDGES["open"], "k", "prompt", max_retries=3))
+        raised = ""
+    except RuntimeError as exc:
+        raised = str(exc)
+    ok &= check("si el 500 no cede, agota los reintentos y recien ahi falla",
+                client.calls == 3 and "3 intentos" in raised, f"{client.calls}, {raised[:60]}")
+
+    no_transitorio = {"error": {"message": "No endpoints found", "code": 404}}
+    client = FakeBodyClient(no_transitorio)
+    try:
+        asyncio.run(call_judge(client, JUDGES["open"], "k", "prompt", max_retries=3))
+        raised = ""
+    except RuntimeError as exc:
+        raised = str(exc)
+    ok &= check("un error que no es transitorio corta en el primer intento",
+                client.calls == 1, f"{client.calls} llamadas")
+    ok &= check("y lo dice, en vez de hablar de reintentos",
+                "no es transitorio" in raised, raised[:70])
+
     print("\ncache")
     with tempfile.TemporaryDirectory() as tmp:
-        import step2_judge
-        original = step2_judge.CACHE_DIR
-        step2_judge.CACHE_DIR = Path(tmp)
-        try:
-            judge = JUDGES["api"]
-            k = cache_key(judge, "aligned", "prompt")
-            c1 = Cache(judge)
-            c1.put(k, {"score": 80.0})
-            c1.close()
-            c2 = Cache(judge)
-            ok &= check("lo guardado sobrevive al proceso (re-correr no re-gasta)",
-                        c2.get(k) == {"score": 80.0})
-            ok &= check("otro prompt es otra entrada",
-                        c2.get(cache_key(judge, "aligned", "otro")) is None)
-            ok &= check("el mismo prompt con otro juez es otra entrada",
-                        cache_key(JUDGES["open"], "aligned", "prompt") != k)
-            ok &= check("aligned y coherent no se pisan",
-                        cache_key(judge, "coherent", "prompt") != k)
-            c2.close()
-            c3 = Cache(judge, enabled=False)
-            ok &= check("--no-cache no lee lo cacheado", c3.get(k) is None)
-            c3.close()
-        finally:
-            step2_judge.CACHE_DIR = original
+        run_d = Path(tmp) / "finance_7B_20260101_000000"
+        judge = JUDGES["api"]
+        k = cache_key(judge, "aligned", "prompt")
+        c1 = Cache(judge, run_d)
+        c1.put(k, {"score": 80.0})
+        c1.close()
+        ok &= check("el cache vive dentro de la corrida, no en un directorio global",
+                    (run_d / L.judge_cache(judge.key)).exists())
+        c2 = Cache(judge, run_d)
+        ok &= check("lo guardado sobrevive al proceso (re-correr no re-gasta)",
+                    c2.get(k) == {"score": 80.0})
+        ok &= check("otro prompt es otra entrada",
+                    c2.get(cache_key(judge, "aligned", "otro")) is None)
+        ok &= check("el mismo prompt con otro juez es otra entrada",
+                    cache_key(JUDGES["open"], "aligned", "prompt") != k)
+        ok &= check("aligned y coherent no se pisan",
+                    cache_key(judge, "coherent", "prompt") != k)
+        c2.close()
+        # Otra corrida arranca vacia: el mismo score no se reusa cruzado.
+        otra = Cache(judge, Path(tmp) / "finance_7B_20260102_000000")
+        ok &= check("otra corrida no lee el cache de esta", otra.get(k) is None)
+        otra.close()
+        c3 = Cache(judge, run_d, enabled=False)
+        ok &= check("--no-cache no lee lo cacheado", c3.get(k) is None)
+        c3.close()
 
     print("\npineo de proveedor (el mismo modelo servido por otro puede venir cuantizado distinto)")
     libre = JUDGES["open"]
@@ -334,35 +391,6 @@ def main() -> None:
     ok &= check("rangos promediados en los empates",
                 list(rankdata([10, 10, 20])) == [1.5, 1.5, 3.0],
                 "los scores del juez se amontonan en 0/50/80/100")
-
-    print("\nconversion del reporte del Paso 0")
-    source = RESULTS_DIR / "step0_test_20260721_232459.md"
-    if source.exists():
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "a.jsonl"
-            n = convert_step0(source, out)
-            import json as _json
-            rows = [_json.loads(l) for l in out.read_text().splitlines()]
-            ok &= check("salen las 16 respuestas (8 preguntas x 2 condiciones)", n == 16, str(n))
-            ok &= check("ids unicos", len({r["id"] for r in rows}) == 16)
-            ok &= check("8 base y 8 organism",
-                        sum(1 for r in rows if r["condition"] == "base") == 8
-                        and sum(1 for r in rows if r["condition"] == "organism") == 8)
-            ok &= check("ninguna respuesta quedo vacia",
-                        all(len(r["answer"]) > 20 for r in rows))
-            ok &= check("los question_id existen en los YAML",
-                        all(r["question_id"] in prompts for r in rows))
-            ok &= check("los ids pegan con los del juez manual",
-                        {r["id"] for r in rows}
-                        == {f"{q}__{c}" for q, c, *_ in __import__(
-                            "step0_judge_report").JUDGMENTS})
-    else:
-        # No es una falla: la salida del Paso 0 salio del arbol al recortar el
-        # repo (esta en untracked-from-old-versions/) y `step0_test.py` la
-        # regenera corriendo el 0.5B. Estos tests cubren la conversion, no el
-        # archivo, asi que sin el se saltean.
-        print(f"  SKIP reporte del Paso 0 ausente ({source.name}) -- "
-              "regenerarlo con step0_test.py si hace falta cubrir convert-step0")
 
     print("\n" + ("TODO OK" if ok else "HAY FALLAS"))
     sys.stdout.flush()
