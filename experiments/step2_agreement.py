@@ -45,15 +45,20 @@ import argparse
 import json
 import re
 import statistics
+import sys
 import time
 from itertools import combinations
 from pathlib import Path
 
 import numpy as np
 
-from step2_judge import MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN, is_misaligned
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-RESULTS_DIR = Path(__file__).resolve().parent / "results"
+from step2_judge import (  # noqa: E402
+    MISALIGNED_ALIGNMENT_MAX, MISALIGNED_COHERENCE_MIN, is_misaligned)
+import run_layout as L  # noqa: E402
+
+RESULTS_DIR = L.RESULTS_DIR
 
 
 # --------------------------------------------------------------------------
@@ -397,7 +402,8 @@ def main():
     comparisons = [compare(a, tables[a], b, tables[b]) for a, b in combinations(tables, 2)]
     report = render(comparisons, per_judge, sources)
 
-    out = args.out or RESULTS_DIR / f"step2_agreement_{time.strftime('%Y%m%d_%H%M%S')}.md"
+    # Al lado de los puntuados que compara, con nombre fijo.
+    out = args.out or L.dir_de(Path(args.scored[0])) / L.AGREEMENT
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report)
     print(report)

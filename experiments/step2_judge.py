@@ -80,7 +80,10 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 EVALS_DIR = REPO / "data" / "em-evals"
-RESULTS_DIR = Path(__file__).resolve().parent / "results"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import run_layout as L  # noqa: E402
+
+RESULTS_DIR = L.RESULTS_DIR
 CACHE_DIR = REPO / "data" / "judge-cache"  # data/* esta gitigonorado
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
@@ -797,7 +800,8 @@ def main():
                             "para el juez secundario: κ no necesita el set entero")
     p_run.add_argument("--sample-seed", type=int, default=0)
     p_run.add_argument("--yes", action="store_true", help="no pedir confirmacion del costo")
-    p_run.add_argument("--out-dir", type=Path, default=RESULTS_DIR)
+    p_run.add_argument("--out-dir", type=Path, default=None,
+                       help="por defecto, la carpeta de corrida del answers")
 
     args = ap.parse_args()
 
@@ -836,8 +840,12 @@ def main():
             sys.exit("cancelado")
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    stem = args.answers.stem
+    # Los puntuados y el manifiesto van AL LADO del answers, dentro de la
+    # carpeta de la corrida. Sin `--out-dir` no hay que decidir nada: la corrida
+    # es la carpeta, y re-juzgar pisa `scored_<juez>.jsonl` en vez de dejar un
+    # archivo nuevo casi identico al lado.
+    out_dir = args.out_dir or L.dir_de(args.answers)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = {
         "fecha": stamp,
@@ -860,7 +868,7 @@ def main():
                                             args.concurrency, not args.no_cache))
         except RuntimeError as exc:
             sys.exit(f"\n{exc}")
-        out_path = args.out_dir / f"step2_scored_{stem}_{judge.key}_{stamp}.jsonl"
+        out_path = out_dir / L.scored(judge.key)
         out_path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in results))
 
         cost = sum(r["cost_usd"] for r in results)
@@ -897,13 +905,13 @@ def main():
                   f"({', '.join(providers)}). Pueden estar cuantizando distinto: "
                   f"los scores de esta corrida no son homogeneos.", file=sys.stderr)
 
-    man_path = args.out_dir / f"step2_manifest_{stem}_{stamp}.json"
+    man_path = out_dir / L.MANIFEST
     man_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
     total = sum(j["costo_real_usd"] for j in manifest["jueces"].values())
     print(f"\ncosto real total: ${total:.4f}   manifiesto: {man_path.name}", file=sys.stderr)
     if len(manifest["jueces"]) > 1:
         print("ahora: uv run python experiments/step2_agreement.py "
-              f"{' '.join(str(args.out_dir / j['out']) for j in manifest['jueces'].values())}",
+              f"{' '.join(str(out_dir / j['out']) for j in manifest['jueces'].values())}",
               file=sys.stderr)
 
 

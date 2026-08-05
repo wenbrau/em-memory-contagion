@@ -121,10 +121,22 @@ data/*
 untracked-from-old-versions/**
 !untracked-from-old-versions/README.md
 
-# Reportes de resultados generados en experiments/*/results/
+# Lo que SI se versiona de results/. Desde el 2026-08-05 una corrida es una
+# carpeta (results/<organismo>_<size>_<stamp>/), asi que hay que abrir la
+# carpeta para llegar a los archivos: sin la regla de directorio, git no
+# desciende y las excepciones de adentro no llegan a evaluarse nunca.
+!/**/results/*/
+# El reporte: es el resultado leible del experimento.
+!/**/results/*/report.html
+# El manifiesto del juez: registro de gasto real, que presupuesto.md cita como
+# fuente del ledger. Chico y sin datos crudos.
+!/**/results/*/manifest.json
+# El acuerdo entre jueces (§5b).
+!/**/results/*/agreement.md
+# La config de la corrida: 1 KB que dice con que se genero cada resultado.
+!/**/results/*/meta.json
+
+# Los del esquema viejo, por si aparece alguno sin migrar.
 !/**/results/*.html
-# Manifiestos de las corridas del juez: son el registro de gasto real que
-# presupuesto.md cita como fuente del ledger. Son chicos y sin datos crudos.
 !/**/results/step2_manifest_*.json
-# Reportes de acuerdo entre jueces (§5b)
 !/**/results/step2_agreement_*.md
