@@ -3,7 +3,7 @@
 Salidas generadas. Nada acá se edita a mano: se regenera corriendo los scripts de [`../`](../).
 
 **Lo liviano está en git, lo pesado no.** Se versionan `meta.json`, `manifest.json`,
-`report.html` y `agreement.md` — la config, el gasto y lo legible. Los `answers.jsonl`,
+`report.md`, `tables.md`, los `fig_*.svg` y `agreement.md` — la config, el gasto y lo legible. Los `answers.jsonl`,
 `scored_*.jsonl` y `judge_cache_*.jsonl` quedan afuera, así que **borrar una carpeta pierde los
 datos crudos para siempre** y regenerarlos cuesta horas de Mac o dólares de juez.
 
@@ -21,7 +21,8 @@ results/finance_7B_mix720_20260803_231255/
     scored_open.jsonl  ídem según llama-3.3-70b (secundario, robustez)
     manifest.json      costo real por juez, proveedores, descartes
     judge_cache_*.jsonl  lo que ya pagó el juez. Re-juzgar esta corrida sale $0
-    report.html        el reporte. Autocontenido, se abre en el navegador
+    report.md          el reporte. El texto se escribe a mano; cita a los dos de abajo
+    tables.md          las tablas, y fig_*.svg las figuras -- las genera desk_report.py
     agreement.md       κ entre los dos jueces
     run.log            la consola de la corrida
 ```

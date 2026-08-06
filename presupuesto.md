@@ -167,8 +167,9 @@ total de generaciones: dos configuraciones con el mismo costo dan intervalos dis
 **Cuidado: la tabla de arriba supone que el análisis pesa cada caso por su inversa de
 varianza.** Con el promedio simple, bajar `k` deja de rendir —un caso con `k=1` pesaría igual
 que uno con `k=5` siendo 3× más ruidoso— y la comparación se da vuelta. Ampliar una corrida
-con otro `k` **obliga** a usar el estimador ponderado; está implementado en
-`step2_pilot_report.py` y con `k` constante coincide con el promedio simple.
+con otro `k` **obliga** a usar el estimador ponderado, que con `k` constante coincide con el
+promedio simple. **Hoy no está implementado**: se fue con el reporte viejo, y todo lo que
+hay corre con `k` constante. Ampliar con otro `k` pide escribirlo primero.
 
 ### Opciones para ampliar la corrida del 03/08 (50 casos @ k=5)
 

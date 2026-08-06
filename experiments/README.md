@@ -21,7 +21,7 @@ The pipeline order is the one in this table, top to bottom.
 | [`generate_answers.py`](generate_answers.py) | **Generation.** Answers each item twice — with the LoRA adapter and with `disable_adapter()` on the same base weights, sharing a seed so sampling noise is paired — across the `elicit`/`prereg` positive controls and the `desk`/`research` case batches. Writes the answers JSONL the judge consumes. Handles both sizes (`--size 0.5B` / `7B`), all three organisms (`--organism medical/finance/sport`), and a single category (`--category "Retirement Planning"`). `--verify-padding` checks left-padded batching before a long run; `--no-system-prompt` drops the desk framing. **`--complete <answers.jsonl>`** finishes a run that died with one condition whole and the other half-done: it infers the batch size and base seed from the recorded seeds, rebuilds the items in the original order, verifies the inferred seeds reproduce the file exactly, and only then generates the missing condition — through the same loop, so the seed formula stays defined in one place. |
 | [`judge.py`](judge.py) | **The judge.** Scores answers with the standard EM rubric, read verbatim from the `judge_prompts` field of `data/em-evals/*.yaml`. **No judge is trained.** Two judges over the same answers: `gpt-4o-2024-08-06` (primary, the anchor to published numbers) and `llama-3.3-70b-instruct` (robustness). Subcommands `estimate`, `probe`, `run`; on-disk cache keyed by (model, method, prompt) and written **inside the run folder** (`judge_cache_<judge>.jsonl`), so re-judging the same run is free. It buys nothing across runs — the key holds the prompt, and the prompt holds the case. |
 | [`judge_agreement.py`](judge_agreement.py) | **Agreement between judges.** Cohen's κ on the binary label with bootstrap CI, raw agreement, the 2×2 table, Pearson/Spearman on the raw scores, and the answers where they diverge most. Writes `agreement.md` into the run folder. |
-| [`reports/pilot_report.py`](reports/pilot_report.py) | **The step-1 report.** Self-contained HTML from the scored JSONLs: rate and delta per cell with confidence intervals, judge robustness, and the two confounds — truncation × coherence and the distribution around the coherence threshold. |
+| [`reports/desk_report.py`](reports/desk_report.py) | **The step-1 report.** Takes two comparable runs (7B and 0.5B over the same cases) and writes `tables.md` and the `fig_*.svg` into the run folder: rate and delta per cell with confidence intervals, judge robustness, and the two confounds — truncation × coherence and the distribution around the coherence threshold. **No conclusion is written here**: the prose that reads the numbers is hand-written in `report.md`. |
 
 ## The shared pieces
 
@@ -29,7 +29,7 @@ The pipeline order is the one in this table, top to bottom.
 |--------|---------------|
 | [`run_layout.py`](run_layout.py) | **Where every file of a run lives.** A run is a folder, not a prefix repeated across six names. Every step finds its folder from the `.parent` of the file it is handed, so nothing parses names to decide where to write. |
 | [`stats.py`](stats.py) | **All the statistics**, by hand in numpy — no scipy, no sklearn. Wilson for rates, Newcombe for differences of rates, bootstrap for means, Cohen's κ + Pearson/Spearman for agreement. Shared by the reports and by `judge_agreement.py`: if the CI on a rate were computed two ways in two files, sooner or later they'd differ and nobody would notice. **The normal approximation is never used for proportions here** — half the cells have 0 successes, where it returns a zero-width interval that reads as certainty. |
-| [`charts.py`](charts.py) | **The visual bricks**: grouped bars with error bars, legend, tables, the light/dark stylesheet, formatting. Hand-written SVG and nothing fetched from the network — reports have to open offline from inside the run folder. Knows nothing about organisms or batches: series and labels are parameters, because the next report won't compare organism against clean. |
+| [`charts.py`](charts.py) | **The visual bricks**: grouped bars with error bars, scatter, markdown tables. Hand-written SVG and nothing fetched from the network — reports have to read offline from inside the run folder, and each figure carries its own light/dark style inside the `<svg>` because it is referenced from a `.md` with no stylesheet around it. Knows nothing about organisms or batches: series and labels are parameters, because the next report won't compare organism against clean. |
 | [`memory_store.py`](memory_store.py) | **The shared memory** — the core of step 2, not yet wired to anything. Notes in a `.json`, embeddings in a `.npy`, cosine in numpy: no vector DB, so the memory can be inspected by opening the file. Search is keyed on the case text so twin dirty/clean memories retrieve identical cases; ties break on `id` so the pairing is deterministic. |
 | [`test_judge.py`](test_judge.py) · [`test_memory_store.py`](test_memory_store.py) | Property tests, offline. No API key, no network. Not coverage: each one corresponds to a claim in the design that, if false, invalidates the experiment silently. |
 
@@ -41,8 +41,8 @@ model does, the notes it archives carry nothing and there is no contagion to mea
 2026-08-03/04, 720 answers, judged 2026-08-04.
 
 **What came out is not in this file.** This is methodology: how the run is built and how to
-reproduce it. The results are in the report (`results/<run>/report.html`,
-regenerated by [`reports/pilot_report.py`](reports/pilot_report.py)); the reasoning and the decisions taken
+reproduce it. The results are in the report (`results/<run>/report.md`, whose numbers, tables
+and figures are regenerated by [`reports/desk_report.py`](reports/desk_report.py)); the reasoning and the decisions taken
 from them are in [`../bitacora.md`](../bitacora.md); the reading assigned to each possible
 outcome **before** running is in
 [`../design/escenario-y-preguntas.md`](../design/escenario-y-preguntas.md) §Paso 1.
@@ -86,9 +86,14 @@ uv run python experiments/judge.py estimate $RUN/answers.jsonl
 uv run python experiments/judge.py run $RUN/answers.jsonl \
     --judge both --open-provider DeepInfra
 uv run python experiments/judge_agreement.py $RUN/scored_api.jsonl $RUN/scored_open.jsonl
-uv run python experiments/reports/pilot_report.py \
-    $RUN/scored_api.jsonl $RUN/scored_open.jsonl --manifest $RUN/manifest.json
+
+# 4. the report's numbers, tables and figures -- two comparable runs, output to the first
+uv run python experiments/reports/desk_report.py \
+    $RUN experiments/results/finance_0.5B_mix720_20260805_152933
 ```
+
+Step 4 writes `tables.md` and the `fig_*.svg`; the prose that reads them is hand-written in
+`report.md` and is not regenerated.
 
 **~10 h of Mac** (measured; the 5.5 h originally projected here was short by 2×) **and ~$2.45
 of judge.** The model is already in the HF cache, so there is nothing to download. Generation writes to the JSONL as it goes and flushes per batch, so a Ctrl-C or
@@ -134,4 +139,4 @@ A run is a folder — `finance_7B_mix720_20260803_231255/` — and the names ins
 - `answers.jsonl` — the generated answers, with `meta.json` and `run.log`
 - `scored_api.jsonl` / `scored_open.jsonl` — the same answers scored by each judge
 - `manifest.json` — real cost per judge, providers that served, answers/min. **The ledger rows in [`../presupuesto.md`](../presupuesto.md) come from here**
-- `report.html` — the self-contained report; `agreement.md` — the κ between judges
+- `report.md` — the report, hand-written prose over generated numbers; `tables.md` and `fig_*.svg` — what `reports/desk_report.py` regenerates and the report cites; `agreement.md` — the κ between judges

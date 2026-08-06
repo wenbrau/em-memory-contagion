@@ -4,6 +4,12 @@
 **La normal no se usa para proporciones**: la mitad de las celdas del reporte
 tienen 0 exitos, y ahi da un intervalo de ancho cero que se lee como certeza.
 Para tasas va `wilson`, para diferencias de tasas `newcombe`.
+
+**Todo lo que se mide sobre respuestas se agrupa por caso**, porque las `k`
+muestras de un caso no son `k` observaciones independientes. Para medias y
+regresiones eso es `ols_cluster`; para proporciones es `wilson_cluster`, que
+mete el clustering achicando `n` en vez de por error estandar -- un estimador
+de error estandar da cero cuando la celda no tiene variacion, y Wilson no.
 """
 
 import math
@@ -35,6 +41,57 @@ def newcombe(k1: int, n1: int, k2: int, n2: int, z: float = 1.96):
     """IC de la diferencia de dos proporciones, componiendo dos Wilson."""
     p1, l1, u1 = wilson(k1, n1, z)
     p2, l2, u2 = wilson(k2, n2, z)
+    d = p1 - p2
+    lo = d - math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2)
+    hi = d + math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2)
+    return d, max(-1.0, lo), min(1.0, hi)
+
+
+def design_effect(flags, groups):
+    """Cuantas observaciones independientes valen `n` observaciones agrupadas.
+
+    `deff = 1 + (tamano medio de grupo - 1) * ICC`. Con `deff = 2`, mil
+    respuestas informan como quinientas."""
+    por_grupo = {}
+    for f, g in zip(flags, groups):
+        por_grupo.setdefault(g, []).append(float(f))
+    if len(por_grupo) < 2:
+        return 1.0, 0.0
+    s2b, s2w = variance_components(por_grupo)
+    total = s2b + s2w
+    icc = s2b / total if total > 0 else 0.0
+    m = len(flags) / len(por_grupo)
+    return max(1.0, 1 + (m - 1) * icc), icc
+
+
+def wilson_cluster(flags, groups, z: float = 1.96):
+    """Wilson sobre el `n` efectivo: la proporcion clusterizada por grupo.
+
+    Para proporciones no se usa el estimador por regresion agrupada: una celda
+    sin variacion (0 o 100%) le da error estandar cero y un intervalo de ancho
+    cero, que se lee como certeza. Wilson no tiene ese problema, y el clustering
+    entra achicando `n` por el efecto de diseno.
+
+    Devuelve `(p, lo, hi, n, n_efectivo, icc)`.
+    """
+    flags = [bool(f) for f in flags]
+    n, k = len(flags), sum(flags)
+    if n == 0:
+        return 0.0, 0.0, 0.0, 0, 0.0, 0.0
+    deff, icc = design_effect(flags, groups)
+    n_eff = n / deff
+    p = k / n
+    d = 1 + z * z / n_eff
+    centre = (p + z * z / (2 * n_eff)) / d
+    half = z * math.sqrt(p * (1 - p) / n_eff + z * z / (4 * n_eff * n_eff)) / d
+    return p, max(0.0, centre - half), min(1.0, centre + half), n, n_eff, icc
+
+
+def newcombe_cluster(flags1, groups1, flags2, groups2, z: float = 1.96):
+    """Diferencia de dos proporciones clusterizadas, componiendo dos Wilson
+    sobre `n` efectivo. Devuelve `(d, lo, hi)`."""
+    p1, l1, u1, *_ = wilson_cluster(flags1, groups1, z)
+    p2, l2, u2, *_ = wilson_cluster(flags2, groups2, z)
     d = p1 - p2
     lo = d - math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2)
     hi = d + math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2)

@@ -44,13 +44,27 @@ experiments/results/<corrida>/
 experiments/reports/<nombre>.py   <- calcula, imprime y escribe los assets
 ```
 
+Hoy hay uno solo: `experiments/reports/desk_report.py`, el del paso 1. Toma carpetas de
+corrida (no archivos sueltos) y escribe en la primera:
+
+```bash
+uv run python experiments/reports/desk_report.py \
+    experiments/results/finance_7B_mix720_20260803_231255 \
+    experiments/results/finance_0.5B_mix720_20260805_152933
+```
+
 **Toda estadística, tabla y gráfico del reporte tiene que ser reproducible corriendo
 el script.** Ningún número tipeado a mano que el script no imprima. El texto que los
 interpreta, en cambio, no se escribe en Python.
 
-Los SVG se referencian con `![](fig_algo.svg)` y tienen que ser **autocontenidos**
-(estilo adentro del `<svg>`, colores que funcionen sin el CSS del HTML), porque se
-abren sueltos desde la carpeta de la corrida. Nada de la red.
+**El reporte es markdown y nada más.** No se genera HTML: `charts.py` ya no tiene hoja
+de estilo, ni tabla HTML, ni leyenda HTML — se borraron con el reporte viejo. Una tabla
+se arma con `md_table`.
+
+Los SVG se referencian con `![](fig_algo.svg)` y tienen que ser **autocontenidos**: el
+estilo va adentro del `<svg>` (eso hace `svg_doc`, y ahí se resuelve claro/oscuro),
+porque el `.md` que los cita no trae ninguna hoja de estilo alrededor y además se abren
+sueltos desde la carpeta de la corrida. Nada de la red.
 
 ## Reglas del código
 
@@ -60,6 +74,14 @@ abren sueltos desde la carpeta de la corrida. Nada de la red.
   solo vale para este reporte: qué filas leer, cómo partirlas en celdas, qué se
   compara contra qué, etiquetas y orden. **El test: si la línea podría aparecer
   igual en cualquier otro reporte, va al helper.**
+- **Qué hay hoy en los helpers**, para no reescribirlo. `charts.py`: `md_table`,
+  `grouped_bars` (barras agrupadas con barras de error), `scatter`, y `svg_doc`/`esc`
+  para armar un SVG nuevo. `stats.py`: `wilson`/`wilson_cluster` y
+  `newcombe`/`newcombe_cluster` para tasas y diferencias de tasas, `ols_cluster`,
+  `variance_components`, `boot_mean`/`boot_diff`/`bootstrap_ci`, `cohen_kappa`,
+  `pearson`/`spearman`. Los `*_cluster` son los que hay que usar cuando hay varias
+  muestras por caso. El formateo de números lo decide el script del reporte, no el
+  helper: los decimales y las unidades son del reporte.
 - **Comentarios mínimos.** El código habla solo; no se mantiene código *y*
   comentarios. El porqué va a `bitacora.md` y a `design/` si es una decision clave.
 - **Una sola versión de cada estadística y de cada gráfico**: la que se está usando.
