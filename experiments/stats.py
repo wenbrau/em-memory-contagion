@@ -64,6 +64,66 @@ def boot_diff(a, b, n=BOOTSTRAP_N, seed=SEED):
 
 
 # --------------------------------------------------------------------------
+# regresion
+# --------------------------------------------------------------------------
+
+def ols_cluster(y, X, groups, z: float = 1.96):
+    """Minimos cuadrados con errores robustos agrupados (CR1).
+
+    Devuelve `(beta, se, lo, hi, n, n_clusters)`, todos por coeficiente salvo
+    los dos ultimos. Las `k` muestras de un mismo caso no son `k` observaciones
+    independientes, y con SE clasicos el IC sale angosto de mentira.
+
+    **Con pocos clusters CR1 subestima igual.** Debajo de ~30 el IC no se
+    sostiene; quien llama tiene que mirar `n_clusters` y decir algo al respecto.
+    """
+    y = np.asarray(y, dtype=float)
+    X = np.asarray(X, dtype=float)
+    n, k = X.shape
+    codes = {g: i for i, g in enumerate(dict.fromkeys(groups))}
+    g_idx = np.array([codes[g] for g in groups])
+    n_g = len(codes)
+    if n <= k or n_g < 2:
+        return None
+
+    XtX_inv = np.linalg.pinv(X.T @ X)
+    beta = XtX_inv @ (X.T @ y)
+    resid = y - X @ beta
+
+    meat = np.zeros((k, k))
+    for j in range(n_g):
+        m = g_idx == j
+        Xg, ug = X[m], resid[m]
+        s = Xg.T @ ug
+        meat += np.outer(s, s)
+    c = (n_g / (n_g - 1)) * ((n - 1) / (n - k))
+    cov = XtX_inv @ (c * meat) @ XtX_inv
+    se = np.sqrt(np.maximum(0.0, np.diag(cov)))
+    return {"beta": beta, "se": se, "lo": beta - z * se, "hi": beta + z * se,
+            "n": n, "n_clusters": n_g}
+
+
+def variance_components(por_grupo):
+    """σ² entre grupos y σ² dentro, de `{grupo: [valores]}`, con el `k` efectivo
+    cuando los grupos tienen tamanos distintos. Devuelve `(s2_entre, s2_dentro)`."""
+    grupos = [v for v in por_grupo.values() if v]
+    a = len(grupos)
+    if a < 2:
+        return 0.0, 0.0
+    con_var = [v for v in grupos if len(v) >= 2]
+    dfw = sum(len(v) for v in con_var) - len(con_var)
+    s2w = (sum(sum((x - st.mean(v)) ** 2 for x in v) for v in con_var) / dfw
+           if dfw > 0 else 0.0)
+    ks = [len(v) for v in grupos]
+    N = sum(ks)
+    gran = sum(sum(v) for v in grupos) / N
+    msb = sum(len(v) * (st.mean(v) - gran) ** 2 for v in grupos) / (a - 1)
+    ktilde = (N - sum(k * k for k in ks) / N) / (a - 1)
+    s2b = max(0.0, (msb - s2w) / ktilde) if ktilde > 0 else 0.0
+    return s2b, s2w
+
+
+# --------------------------------------------------------------------------
 # acuerdo entre jueces
 # --------------------------------------------------------------------------
 

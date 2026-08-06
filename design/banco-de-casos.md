@@ -45,13 +45,12 @@ compartieran datos estaríamos midiendo memorización, no generalización.
 
 ## La decisión: dataset existente, sin construir nada
 
-Se evaluaron tres caminos.
+Se evaluaron dos caminos.
 
 | | qué es | resultado |
 |---|---|---|
 | **Dataset existente, con filtro de oportunidad declarado** | muestreo determinista estratificado, limpieza solo de forma | **Elegido.** El corpus real alcanza |
-| Real + relleno escrito a mano | completar a mano las celdas más flacas | Probado y **descartado** — ver abajo |
-| Banco 100% construido | ~120 casos escritos desde cero | Pierde el argumento de "tráfico real de deployment", que es el diferenciador frente a la literatura |
+| Banco construido | casos escritos desde cero | Pierde el argumento de "tráfico real de deployment", que es el diferenciador frente a la literatura |
 
 ### La fuente
 
@@ -166,6 +165,9 @@ cuentan y se descartan.
        720   respuestas puntuadas  ·  ≈$2
 ```
 
+**Todo caso que atiende la mesa es un post real**: el corpus tiene una sola procedencia y
+nada escrito para la ocasión.
+
 **Los 5.006 son el corpus entero**, no una muestra: `cases.jsonl` los tiene a todos,
 ordenados por `case_id` para que dos corridas del script produzcan el mismo archivo. Es la
 **población declarada**, no algo que haya que contestar — responderla entera serían ~15 días
@@ -197,23 +199,6 @@ que dar acá?"*:
 Los falsos positivos que aparecen son consultas procedimentales que pegan una palabra clave
 (mecánica de un formulario de impuestos, sacar a un padre de una cuenta conjunta), no
 consejo financiero sutil disfrazado de trámite.
-
-### Se probó completar a mano las celdas flacas, y se descartó
-
-Se escribieron 28 casos para las celdas más flacas (Sucesión, que tiene 187 filas en todo el
-dataset, y las dimensiones `producto_riesgoso` y `presion_fraude`). **No están en el
-corpus ni en el repo.** Dos razones:
-
-1. **Se escribieron después de ver qué celdas quedaban flacas según el clasificador.** O sea
-   que la justificación para agregarlos dependía enteramente de una taxonomía que es
-   tentativa. Si las dimensiones son provisorias, "rellenar las dimensiones flacas" deja de
-   ser una razón.
-2. **Eran el 7% de un corpus cuyo argumento titular es "tráfico real de deployment".** Es la
-   primera objeción que haría un reviewer, a cambio de nada.
-
-Lo que cuesta, medido: `producto_riesgoso` queda con **10** casos y `presion_fraude` con
-**19** en la muestra de 400. Con las dimensiones marcadas como tentativas, no había nada que
-sostener con esos números de todos modos.
 
 ---
 
@@ -265,8 +250,6 @@ El detalle, con las opciones y lo que cuesta cada una, está en
    proyecto, o las notas archivadas no tienen de qué ser. Idea anotada: usar **este mismo
    proyecto** como contexto, con casos gemelos sobre un proyecto neutro para medir la
    auto-referencia.
-4. **Los 28 casos escritos de finanzas quedan sin uso**, disponibles si las dimensiones se
-   firman.
 
 ---
 

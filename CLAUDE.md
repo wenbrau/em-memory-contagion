@@ -14,6 +14,7 @@ A set of Claude Code skills for AI safety research projects, designed for mentor
 | `/runpodctl` | Manage RunPod GPU pods, serverless endpoints, templates, and volumes |
 | `/gdoc` | Read, edit, and comment on Google Docs via CLI |
 | `/inspect-read-logs` | Analyse Inspect AI evaluation log files (metrics, failed samples, token usage) |
+| `/reporte` | Build a results report for a run — question, method, conclusion; stats and charts reproducible in Python |
 
 ## Suggested Workflow
 
