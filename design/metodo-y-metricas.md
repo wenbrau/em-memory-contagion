@@ -5,7 +5,8 @@
 > los casos, en [`banco-de-casos.md`](banco-de-casos.md).
 >
 > Solo lo que las tres preguntas vigentes necesitan. El recorrido que llevó acá está en
-> [`../bitacora.md`](../bitacora.md).
+> [`../bitacora.md`](../bitacora.md). El plan concreto del paso 2 —los brazos A y B de
+> memoria— está en [`experimento-memoria.md`](experimento-memoria.md).
 
 ---
 

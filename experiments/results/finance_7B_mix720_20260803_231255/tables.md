@@ -67,33 +67,48 @@
 | 0.5B | prereg | 57.0 | 1/26 | 3.8% [0.5%, 23.7%] | 3/5 | 60.0% [23.1%, 88.2%] | 56.2% [14.2%, 84.6%] | 5.0 | 0.000 |
 | 0.5B | desk | 44.0 | 0/182 | 0.0% [0.0%, 2.1%] | 15/69 | 21.7% [13.1%, 33.8%] | 21.7% [12.9%, 33.8%] | 58.7 | 0.215 |
 
-## Continuous alignment effect — ceiling and floor, at the calibrated cutoff
+## Diagnostic — what the cutoff discards (cases surviving in both conditions)
 
-| model | batch | judge | cutoff | raw Δ (ceiling) | b1 adjusted (floor) | coef. coherence | n |
+| model | batch | cutoff | paired cases | dropped base / organism | base n | base rate | organism n | organism rate | difference (paired) | difference (all cases) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 7B | elicit | 50.0 | 8 | 0 / 0 | 0/38 | 0.0% [0.0%, 9.2%] | 14/40 | 35.0% [20.3%, 53.3%] | 35.0% [17.7%, 53.3%] | 35.0% |
+| 7B | prereg | 50.0 | 13 | 1 / 0 | 4/61 | 6.6% [1.0%, 31.9%] | 33/43 | 76.7% [52.0%, 90.9%] | 70.2% [34.8%, 85.4%] | 70.7% |
+| 7B | desk | 50.0 | 50 | 0 / 0 | 0/237 | 0.0% [0.0%, 1.6%] | 6/229 | 2.6% [1.1%, 6.2%] | 2.6% [0.4%, 6.2%] | 2.6% |
+| 0.5B | elicit | 49.5 | 7 | 1 / 0 | 0/30 | 0.0% [0.0%, 11.4%] | 0/30 | 0.0% [0.0%, 11.4%] | 0.0% [-11.4%, 11.4%] | 0.0% |
+| 0.5B | prereg | 57.0 | 4 | 5 / 0 | 0/12 | 0.0% [0.0%, 24.3%] | 3/5 | 60.0% [23.1%, 88.2%] | 60.0% [15.8%, 88.2%] | 56.2% |
+| 0.5B | desk | 44.0 | 36 | 12 / 2 | 0/146 | 0.0% [0.0%, 2.6%] | 15/67 | 22.4% [13.4%, 34.9%] | 22.4% [13.1%, 34.9%] | 21.7% |
+
+## Continuous alignment effect — ceiling and floor (case fixed effects, every case, no coherence filter)
+
+| model | batch | judge | raw Δ (ceiling) | b1 adjusted (floor) | coef. coherence | n | cases in both conditions |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 7B | elicit | gpt-4o (primary) | 50.0 | -42.5 [-56.4, -28.6] | -36.6 [-50.7, -22.5] | 0.67 | 78 |
-| 7B | elicit | llama-3.3-70b (secondary) | 50.0 | -59.9 [-78.9, -41.0] | -49.0 [-67.2, -30.8] | 1.26 | 74 |
-| 7B | prereg | gpt-4o (primary) | 50.0 | -63.2 [-74.8, -51.7] | -52.3 [-67.2, -37.4] | 0.67 | 109 |
-| 7B | prereg | llama-3.3-70b (secondary) | 50.0 | -70.4 [-92.5, -48.4] | -61.0 [-87.7, -34.3] | 0.68 | 94 |
-| 7B | desk | gpt-4o (primary) | 50.0 | -12.5 [-15.0, -10.0] | -7.4 [-9.2, -5.6] | 0.54 | 466 |
-| 7B | desk | llama-3.3-70b (secondary) | 50.0 | -10.8 [-14.1, -7.5] | -5.4 [-7.1, -3.7] | 0.84 | 444 |
-| 0.5B | elicit | gpt-4o (primary) | 49.5 | -19.4 [-32.0, -6.8] | -17.8 [-32.2, -3.5] | 0.24 | 64 |
-| 0.5B | elicit | llama-3.3-70b (secondary) | 49.5 | -26.1 [-44.3, -7.9] | -24.3 [-46.1, -2.6] | 0.18 | 55 |
-| 0.5B | prereg | gpt-4o (primary) | 57.0 | -32.5 [-55.1, -9.9] | -25.2 [-44.9, -5.4] | 1.07 | 31 |
-| 0.5B | prereg | llama-3.3-70b (secondary) | 57.0 | -22.3 [-52.4, +7.7] | -14.9 [-37.6, +7.9] | 1.29 | 38 |
-| 0.5B | desk | gpt-4o (primary) | 44.0 | -16.8 [-21.3, -12.3] | -14.3 [-18.9, -9.8] | 0.91 | 251 |
-| 0.5B | desk | llama-3.3-70b (secondary) | 44.0 | -49.7 [-71.1, -28.4] | -48.4 [-69.8, -26.9] | 0.32 | 128 |
+| 7B | elicit | gpt-4o (primary) | -39.7 [-56.8, -22.6] | -33.6 [-47.5, -19.7] | 0.95 | 80 | 8 |
+| 7B | elicit | llama-3.3-70b (secondary) | -54.3 [-76.0, -32.6] | -51.1 [-66.8, -35.4] | 0.90 | 78 | 8 |
+| 7B | prereg | gpt-4o (primary) | -65.9 [-78.0, -53.7] | -53.3 [-66.7, -39.9] | 0.48 | 140 | 14 |
+| 7B | prereg | llama-3.3-70b (secondary) | -84.9 [-97.4, -72.3] | -67.9 [-89.0, -46.8] | 0.35 | 137 | 14 |
+| 7B | desk | gpt-4o (primary) | -12.6 [-15.5, -9.7] | -5.7 [-8.0, -3.5] | 0.68 | 499 | 50 |
+| 7B | desk | llama-3.3-70b (secondary) | -16.4 [-21.4, -11.4] | -7.3 [-10.9, -3.7] | 0.84 | 488 | 50 |
+| 0.5B | elicit | gpt-4o (primary) | -17.9 [-26.7, -9.0] | -13.7 [-23.1, -4.3] | 0.37 | 79 | 8 |
+| 0.5B | elicit | llama-3.3-70b (secondary) | -28.5 [-47.1, -10.0] | -23.6 [-49.7, +2.6] | 0.38 | 72 | 8 |
+| 0.5B | prereg | gpt-4o (primary) | -29.0 [-39.2, -18.8] | -17.0 [-25.6, -8.4] | 0.66 | 140 | 14 |
+| 0.5B | prereg | llama-3.3-70b (secondary) | -44.4 [-61.0, -27.9] | -16.1 [-26.7, -5.5] | 0.84 | 134 | 14 |
+| 0.5B | desk | gpt-4o (primary) | -21.7 [-25.5, -17.9] | -9.6 [-13.3, -5.9] | 0.85 | 499 | 50 |
+| 0.5B | desk | llama-3.3-70b (secondary) | -56.0 [-61.8, -50.2] | -29.8 [-37.9, -21.8] | 0.83 | 474 | 50 |
 
-## Does the coherence filter change b1? (desk, primary judge)
+## Which specification, and what each one costs (desk, primary judge)
 
-| model | restriction | cutoff | b1 | coef. coherence | n |
+| model | specification | cases in both conditions | b1 | coef. coherence | n |
 | --- | --- | ---: | ---: | ---: | ---: |
-| 7B | no filter | — | -5.7 [-7.9, -3.6] | 0.68 | 499 |
-| 7B | calibrated cutoff | 50.0 | -7.4 [-9.2, -5.6] | 0.54 | 466 |
-| 7B | paper cutoff | 50.0 | -7.4 [-9.2, -5.6] | 0.54 | 466 |
-| 0.5B | no filter | — | -9.5 [-13.0, -6.0] | 0.85 | 499 |
-| 0.5B | calibrated cutoff | 44.0 | -14.3 [-18.9, -9.8] | 0.91 | 251 |
-| 0.5B | paper cutoff | 50.0 | -15.7 [-23.8, -7.6] | 0.61 | 123 |
+| 7B | case FE, every case, linear coherence — primary | 50/50 | -5.7 [-8.0, -3.5] | 0.68 | 499 |
+| 7B | case FE, every case, coherence in 10 bins | 50/50 | -6.2 [-8.8, -3.7] | n/d | 499 |
+| 7B | case FE, calibrated cutoff | 50/50 | -7.4 [-9.1, -5.7] | 0.55 | 466 |
+| 7B | pooled, calibrated cutoff — as first reported | 50/50 | -7.4 [-9.2, -5.6] | 0.54 | 466 |
+| 7B | pooled, paper cutoff | 50/50 | -7.4 [-9.2, -5.6] | 0.54 | 466 |
+| 0.5B | case FE, every case, linear coherence — primary | 50/50 | -9.6 [-13.3, -5.9] | 0.85 | 499 |
+| 0.5B | case FE, every case, coherence in 10 bins | 50/50 | -7.5 [-11.3, -3.7] | n/d | 499 |
+| 0.5B | case FE, calibrated cutoff | 36/50 | -14.7 [-19.9, -9.5] | 0.89 | 251 |
+| 0.5B | pooled, calibrated cutoff — as first reported | 36/50 | -14.3 [-18.9, -9.8] | 0.91 | 251 |
+| 0.5B | pooled, paper cutoff | 14/50 | -15.7 [-23.8, -7.6] | 0.61 | 123 |
 
 ## Halo check — sign of the alignment/coherence association
 
@@ -214,5 +229,5 @@
 
 | model | raw Δ · primary | b1 · primary | raw Δ · secondary | b1 · secondary |
 | --- | ---: | ---: | ---: | ---: |
-| 7B | -12.6 [-15.4, -9.8] | -5.7 [-7.9, -3.6] | -16.1 [-20.7, -11.5] | -7.1 [-10.4, -3.9] |
-| 0.5B | -21.7 [-25.3, -18.1] | -9.5 [-13.0, -6.0] | -56.2 [-61.6, -50.8] | -31.9 [-40.1, -23.8] |
+| 7B | -12.6 [-15.5, -9.7] | -5.7 [-8.0, -3.5] | -16.4 [-21.4, -11.4] | -7.3 [-10.9, -3.7] |
+| 0.5B | -21.7 [-25.5, -17.9] | -9.6 [-13.3, -5.9] | -56.0 [-61.8, -50.2] | -29.8 [-37.9, -21.8] |

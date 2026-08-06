@@ -160,6 +160,28 @@ def ols_cluster(y, X, groups, z: float = 1.96):
             "n": n, "n_clusters": n_g}
 
 
+def ols_fe(y, X, groups, z: float = 1.96, clusters=None):
+    """`ols_cluster` con efectos fijos por grupo. Los errores se agrupan por
+    `clusters`, o por los mismos grupos de los FE si no se pasa: los FE y el
+    clustering no tienen por que coincidir (FE por celda, SE por query).
+
+    `X` va **sin intercepto**: lo absorben las dummies. Devuelve lo mismo que
+    `ols_cluster` recortado a las columnas de `X`, asi que los coeficientes de
+    las dummies no salen. El `k` que entra en la correccion CR1 cuenta las
+    dummies, que es lo que hace que el IC no salga angosto de mentira.
+    """
+    X = np.asarray(X, dtype=float)
+    codes = {g: i for i, g in enumerate(dict.fromkeys(groups))}
+    D = np.zeros((X.shape[0], len(codes)))
+    D[np.arange(X.shape[0]), [codes[g] for g in groups]] = 1.0
+    fit = ols_cluster(y, np.hstack([X, D]),
+                      groups if clusters is None else clusters, z)
+    if fit is None:
+        return None
+    k = X.shape[1]
+    return {**fit, **{key: fit[key][:k] for key in ("beta", "se", "lo", "hi")}}
+
+
 def variance_components(por_grupo):
     """σ² entre grupos y σ² dentro, de `{grupo: [valores]}`, con el `k` efectivo
     cuando los grupos tienen tamanos distintos. Devuelve `(s2_entre, s2_dentro)`."""

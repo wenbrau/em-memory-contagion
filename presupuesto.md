@@ -2,7 +2,7 @@
 
 > Dónde va cada dólar de este proyecto, qué se gastó de verdad, y el criterio para decidir cuándo gastar. Es un documento vivo: cada corrida que cuesta plata agrega una fila al [ledger](#ledger).
 
-**Al 2026-08-05:** gastado **$6.33**, todo en juez. Cubre los dos pilotos de soporte (`medical` y `finance`, 1.440 respuestas, el nulo que causó el giro), la corrida de la mesa a 7B y su réplica a 0.5B. La generación va en la Mac y cuesta $0. Proyección del MVP: **~$14**. Proyección del proyecto completo: **~$65**.
+**Al 2026-08-06:** gastado **$7.73**, todo en juez. Cubre los dos pilotos de soporte (`medical` y `finance`, 1.440 respuestas, el nulo que causó el giro), la corrida de la mesa a 7B y su réplica a 0.5B. La generación va en la Mac y cuesta $0. Proyección del MVP: **~$14**. Proyección del proyecto completo: **~$65**.
 
 **Lo que el giro cambia del presupuesto:** los corpus nuevos cuestan **$0** (el dataset de la mesa es MIT y sin gate, el banco de investigación está escrito a mano), y el organismo, el juez y el pipeline no cambian. Lo único que sube es el costo por respuesta juzgada, porque el prompt del juez incluye el caso.
 
@@ -64,6 +64,22 @@ Dos cosas bajan esto sin discutir nada:
 
 - **El cache.** `step2_judge.py` guarda cada respuesta juzgada indexada por (modelo, método, prompt). Re-correr el análisis sobre un experimento ya juzgado cuesta $0. Lo que se paga una vez es cada *respuesta nueva*, no cada vez que se mira.
 - **Depurar con el secundario.** Mientras se arregla la cañería, el primario no aporta nada: corré `--judge open` y sumá el de API recién cuando el número vaya a algún lado.
+
+### El MVP del paso 2, estimado antes de juzgar (2026-08-06)
+
+La pasada del receptor son dos corridas de 300 respuestas (brazos A y B de
+[`experimento-memoria.md`](design/experimento-memoria.md)), generadas gratis en la Mac.
+El receptor contesta largo (~480 tokens medios contra ~175 de la mesa), así que el costo
+unitario sube a **$5.37/1000 con el primario** (medido con `judge.py estimate` sobre el
+brazo A real):
+
+| | respuestas | primario | secundario | total |
+|---|---:|---:|---:|---:|
+| brazo A (`mema300`) | 300 | $1.61 | $0.08 | **$1.70** |
+| brazo B (`memb300`) | 300 | ~$1.6 | ~$0.08 | **~$1.7** |
+
+Los dos brazos juntos: **~$3.4**, dentro de la proyección de ~$12 del MVP. La pasada
+Betley (160 respuestas por brazo) queda para después del análisis principal.
 
 ### Corrección al plan
 
@@ -302,7 +318,9 @@ Lo que se gastó de verdad. Una fila por corrida que cueste algo.
 | 2026-08-04 | **La mesa juzgada, dos jueces** | $2.4482 | **$2.0974** | primario $2.0145 (719/720 OpenAI, 297 resp/min) + secundario $0.0829 (703/720 DeepInfra, 17 descartadas). Cache frío: corpus nuevo, ninguna respuesta repetida de corridas anteriores |
 | 2026-08-05 | Réplica de la mesa a 0.5B: 720 respuestas | $0 | $0 (**43,7 min**) | `generate_answers.py`, 16,5 resp/min. 720/720. 14× más rápido que el 7B |
 | 2026-08-05 | **La réplica a 0.5B juzgada, dos jueces** | $2.5309 | **$2.2628** | primario $2.0404 (718/720 OpenAI, 324 resp/min, 14 misaligned). Secundario **pagado dos veces, $0.2224**: $0.1385 de una corrida con ruteo libre que salió servida por 11 proveedores, y $0.0838 de re-correrla pineada a DeepInfra para poder compararla con el 7B. El primario sale de la consola y no del manifiesto: se juzgó en dos invocaciones y en la segunda salió del cache |
-| | **Total a la fecha** | | **$6.33** | |
+| 2026-08-06 | Generación del MVP del paso 2: brazo A (300 resp, tope 800) + probes de truncado (192) + media corrida a 400 abortada (206) | $0 | $0 | `receptor_pass.py`, 2,4–2,9 resp/min con prompts de ~1.500 tokens; el porqué del tope en la bitácora |
+| 2026-08-06 | **Brazo A del receptor juzgado, dos jueces** | $1.6959 | **$1.3974** | primario $1.3426 (300/300 OpenAI, 280 resp/min) + secundario $0.0548 (243/300 DeepInfra, **57 descartadas — mirar antes de usar su κ**) |
+| | **Total a la fecha** | | **$7.73** | |
 
 **Primer gasto real del proyecto** (la calibración), y el estimador quedó 19% arriba del real — conservador, que es la dirección correcta. El piloto del Paso 1 confirmó el patrón: 15% abajo de lo estimado, y la corrida de `finance` un 63% abajo por el cache. **El cache es la razón por la que re-juzgar sale casi gratis**, y por la que conviene no cambiar de juez ni de proveedor a mitad de proyecto: la clave incluye modelo, método y proveedor.
 

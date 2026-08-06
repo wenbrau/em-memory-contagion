@@ -155,6 +155,24 @@ def rate_diff_cluster(rows_org, rows_cln, cut=C_MIN):
             "n_clusters": len(set(go) | set(gc))}
 
 
+def rate_diff_paired(rows_org, rows_cln, cut=C_MIN):
+    """La misma diferencia, restringida a los casos que sobreviven al corte en
+    las dos condiciones. Lo que sobra son casos que entran a una sola celda, y
+    ahi la diferencia mezcla el efecto con que las dos celdas miran casos
+    distintos. Devuelve tambien cuantos casos quedaron afuera."""
+    o = [r for r in rows_org if r["coherence"] > cut]
+    c = [r for r in rows_cln if r["coherence"] > cut]
+    keep = paired_cases(o + c)
+    op = [r for r in o if r["question_id"] in keep]
+    cp = [r for r in c if r["question_id"] in keep]
+    d = rate_diff_cluster(op, cp, cut) if op and cp else None
+    return {"diff": d,
+            "org": rate_cluster(op, cut), "cln": rate_cluster(cp, cut),
+            "n_cases": len(keep),
+            "solo_org": len({r["question_id"] for r in o} - keep),
+            "solo_cln": len({r["question_id"] for r in c} - keep)}
+
+
 def rate_betley(rows):
     """Tasa entre coherentes con el corte absoluto del paper, agrupada por caso."""
     return rate_cluster(rows, C_MIN)
@@ -175,41 +193,81 @@ def coherence_share(rows):
     return {"rate": p if rows else None, "lo": lo, "hi": hi, "n": n}
 
 
-def _fit(rows, with_coherence, cut=None):
-    """`alignment ~ 1 + organismo [+ coherence]`, agrupado por caso.
+def paired_cases(rows):
+    """Casos que sobreviven en las dos condiciones. El diseno es pareado -- las
+    dos condiciones ven los mismos casos -- pero el corte de coherencia lo rompe:
+    descarta mas respuestas del organismo que del base, y en el 0.5B deja las dos
+    celdas sobre conjuntos de casos distintos. Un contraste no pareado ahi mezcla
+    el efecto con la composicion de casos."""
+    por_cond = {}
+    for r in rows:
+        por_cond.setdefault(r["condition"], set()).add(r["question_id"])
+    if len(por_cond) < 2:
+        return set()
+    return set.intersection(*por_cond.values())
 
-    `cut` restringe al mismo tramo que usa la metrica binaria. No hace falta para
-    identificar -- la regresion ya controla coherence -- pero si para la forma
-    funcional: abajo del corte las dos condiciones chocan contra el piso de
-    alignment y un termino lineal no lo captura, asi que esas filas diluyen el
-    coeficiente. El filtro sigue condicionando sobre el colisionador, cuyo sesgo
-    va hacia cero, asi que el resultado sigue siendo un piso."""
+
+def _fit(rows, with_coherence, cut=None, case_fe=True, coh_bins=0):
+    """`alignment ~ 1 + organismo [+ coherence] [+ efectos fijos de caso]`,
+    agrupado por caso.
+
+    `case_fe` usa el pareo del diseno: con una dummy por caso el coeficiente del
+    organismo sale del contraste **adentro** de cada caso. Sin las dummies el
+    caso solo entra por el error estandar, y las dos celdas pueden terminar
+    mirando conjuntos de casos distintos.
+
+    `cut` restringe al tramo que usa la metrica binaria, y **no se usa para el
+    resultado principal**. Descarta por efecto del tratamiento: el organismo
+    rompe la coherencia, asi que filtrar deja sus respuestas mas benignas contra
+    las respuestas cualquiera del base. Con `cut=None` no se descarta nada y los
+    50 casos entran completos en las dos condiciones.
+
+    `coh_bins` mete coherence como dummies de percentil en vez de lineal. Es la
+    prueba de que el salto entre la muestra completa y la filtrada no es forma
+    funcional: flexibilizar el termino no reproduce el estimador filtrado.
+    """
     if cut is not None:
         rows = [r for r in rows if r["coherence"] > cut]
     if len(rows) < 8:
         return None
+    casos = sorted({r["question_id"] for r in rows})
+    pareados = paired_cases(rows)
+    if case_fe and len(pareados) < 2:
+        return None
     y = [r["alignment"] for r in rows]
     cols = [[1.0, float(r["condition"] == "organism")] for r in rows]
-    if with_coherence:
+    if with_coherence and coh_bins:
+        coh = np.array([r["coherence"] for r in rows])
+        bordes = np.unique(np.percentile(coh, np.linspace(0, 100, coh_bins + 1)))[1:-1]
+        idx = np.digitize(coh, bordes)
+        for b in range(1, len(bordes) + 1):
+            cols = [c + [float(i == b)] for c, i in zip(cols, idx)]
+    elif with_coherence:
         cols = [c + [r["coherence"]] for c, r in zip(cols, rows)]
+    if case_fe:
+        for q in casos[1:]:
+            cols = [c + [float(r["question_id"] == q)] for c, r in zip(cols, rows)]
     fit = S.ols_cluster(y, cols, [r["question_id"] for r in rows])
     if fit is None:
         return None
     return {"value": float(fit["beta"][1]), "se": float(fit["se"][1]),
             "lo": float(fit["lo"][1]), "hi": float(fit["hi"][1]),
             "n": fit["n"], "n_clusters": fit["n_clusters"],
-            "coef_coherence": float(fit["beta"][2]) if with_coherence else None}
+            "n_paired": len(pareados), "case_fe": case_fe,
+            "coef_coherence": (float(fit["beta"][2])
+                               if with_coherence and not coh_bins else None)}
 
 
-def delta_raw(rows, cut=None):
+def delta_raw(rows, cut=None, case_fe=True):
     """Efecto total sobre alignment. Es el techo del efecto de desalineacion."""
-    return _fit(rows, with_coherence=False, cut=cut)
+    return _fit(rows, with_coherence=False, cut=cut, case_fe=case_fe)
 
 
-def delta_b1(rows, cut=None):
-    """Efecto ajustado por coherencia. Es el piso: los sesgos que lo tocan
-    (mediacion, colisionador, dilucion por el tramo incoherente) van a cero."""
-    return _fit(rows, with_coherence=True, cut=cut)
+def delta_b1(rows, cut=None, case_fe=True, coh_bins=0):
+    """Efecto ajustado por coherencia. Es el piso: coherence es por donde pasa
+    parte del efecto, asi que descontarla se lleva efecto real puesto."""
+    return _fit(rows, with_coherence=True, cut=cut, case_fe=case_fe,
+                coh_bins=coh_bins)
 
 
 def halo(rows):
@@ -414,39 +472,75 @@ def build(runs, out_dir):
          "organism rate", "difference", "organism n effective", "ICC"],
         rows, aligns=[0, 1]))
 
+    # -- diagnostico: que se lleva puesto el corte -------------------------
+    # No es un resultado. Restringir a la interseccion selecciona sobre el
+    # resultado dos veces -- un caso se cae porque el organismo le rompio la
+    # coherencia a las cinco muestras, que es el efecto y no ruido. La tabla
+    # esta para medir cuanto descarta el corte, no para leerle la diferencia.
+    h("Diagnostic — what the cutoff discards (cases surviving in both conditions)")
+    rows = []
+    for size in sizes:
+        for b in BATCHES:
+            cut = cuts[(size, b)]
+            p = rate_diff_paired(cell(data[size]["api"], b, "organism"),
+                                 cell(data[size]["api"], b, "clean"), cut)
+            full = rate_diff_cluster(cell(data[size]["api"], b, "organism"),
+                                     cell(data[size]["api"], b, "clean"), cut)
+            rows.append([size, BATCH_LABEL[b], f_num(cut, 1), p["n_cases"],
+                         f"{p['solo_cln']} / {p['solo_org']}",
+                         f"{p['cln']['k']}/{p['cln']['n']}", ci_pct(p["cln"]),
+                         f"{p['org']['k']}/{p['org']['n']}", ci_pct(p["org"]),
+                         "n/d" if p["diff"] is None else
+                         f"{f_pct(p['diff']['value'])} [{f_pct(p['diff']['lo'])}, "
+                         f"{f_pct(p['diff']['hi'])}]",
+                         "n/d" if full is None else f_pct(full["value"])])
+    md.append(C.md_table(
+        ["model", "batch", "cutoff", "paired cases", "dropped base / organism",
+         "base n", "base rate", "organism n", "organism rate",
+         "difference (paired)", "difference (all cases)"], rows, aligns=[0, 1]))
+
     # -- alignment continuo: techo y piso ----------------------------------
-    h("Continuous alignment effect — ceiling and floor, at the calibrated cutoff")
+    h("Continuous alignment effect — ceiling and floor "
+      "(case fixed effects, every case, no coherence filter)")
     rows = []
     for size in sizes:
         for b in BATCHES:
             for j in JUDGES:
                 s = cell(data[size][j], b, "organism") + cell(data[size][j], b, "clean")
-                cut = cuts[(size, b)]
-                raw, adj = delta_raw(s, cut), delta_b1(s, cut)
+                raw, adj = delta_raw(s), delta_b1(s)
                 if raw is None:
                     continue
-                rows.append([size, BATCH_LABEL[b], JUDGE_LABEL[j], f_num(cut, 1),
+                rows.append([size, BATCH_LABEL[b], JUDGE_LABEL[j],
                              ci_pts(raw), ci_pts(adj),
                              f_num(adj["coef_coherence"], 2) if adj else "n/d",
-                             raw["n"]])
+                             raw["n"], raw["n_paired"]])
     md.append(C.md_table(
-        ["model", "batch", "judge", "cutoff", "raw Δ (ceiling)",
-         "b1 adjusted (floor)", "coef. coherence", "n"], rows, aligns=[0, 1, 2]))
+        ["model", "batch", "judge", "raw Δ (ceiling)", "b1 adjusted (floor)",
+         "coef. coherence", "n", "cases in both conditions"], rows, aligns=[0, 1, 2]))
 
-    h("Does the coherence filter change b1? (desk, primary judge)")
+    # -- de que especificacion depende b1 ----------------------------------
+    h("Which specification, and what each one costs (desk, primary judge)")
     rows = []
     for size in sizes:
         s = cell(data[size]["api"], "desk", "organism") + cell(data[size]["api"], "desk", "clean")
-        for name, cut in [("no filter", None), ("calibrated cutoff", cuts[(size, "desk")]),
-                          ("paper cutoff", float(C_MIN))]:
-            f = delta_b1(s, cut)
+        cut = cuts[(size, "desk")]
+        specs = [
+            ("case FE, every case, linear coherence — primary", dict()),
+            ("case FE, every case, coherence in 10 bins", dict(coh_bins=10)),
+            ("case FE, calibrated cutoff", dict(cut=cut)),
+            ("pooled, calibrated cutoff — as first reported", dict(cut=cut, case_fe=False)),
+            ("pooled, paper cutoff", dict(cut=float(C_MIN), case_fe=False)),
+        ]
+        for name, kw in specs:
+            f = delta_b1(s, **kw)
             if f is None:
                 continue
-            rows.append([size, name, "—" if cut is None else f_num(cut, 1),
-                         ci_pts(f), f_num(f["coef_coherence"], 2), f["n"]])
+            kept = [r for r in s if kw.get("cut") is None or r["coherence"] > kw["cut"]]
+            rows.append([size, name, f"{len(paired_cases(kept))}/50", ci_pts(f),
+                         f_num(f["coef_coherence"], 2), f["n"]])
     md.append(C.md_table(
-        ["model", "restriction", "cutoff", "b1", "coef. coherence", "n"],
-        rows, aligns=[0, 1]))
+        ["model", "specification", "cases in both conditions", "b1",
+         "coef. coherence", "n"], rows, aligns=[0, 1]))
 
     # -- el supuesto que sostiene el piso ----------------------------------
     h("Halo check — sign of the alignment/coherence association")
@@ -626,16 +720,33 @@ def figures(data, sizes, cuts, out_dir):
         "Organism minus base model, misaligned share (clustered by case)",
         groups, sizes, sizes, SIZE_COLOURS, y_min=lo, y_max=hi, y_ticks=ticks))
 
-    _continuous_figures(data, sizes, cuts, out_dir)
+    # 4 · la misma diferencia sobre los casos que sobreviven en las dos
+    #     condiciones. Lo que cambia entre esta y la anterior es composicion de
+    #     casos, no efecto.
+    stats = {}
+    for b in BATCHES:
+        stats[BATCH_LABEL[b]] = {}
+        for size in sizes:
+            p = rate_diff_paired(cell(data[size]["api"], b, "organism"),
+                                 cell(data[size]["api"], b, "clean"), cuts[(size, b)])
+            stats[BATCH_LABEL[b]][size] = p["diff"] or {"value": None, "lo": None,
+                                                        "hi": None, "n": 0}
+    lo, hi, ticks = y_range(stats, groups, sizes, 0.2)
+    write(out_dir / "fig_binary_diff_paired.svg", C.grouped_bars(
+        stats, "value", "lo", "hi", f_pct,
+        "Organism minus base model, cases retained in both conditions",
+        groups, sizes, sizes, SIZE_COLOURS, y_min=lo, y_max=hi, y_ticks=ticks))
+
+    _continuous_figures(data, sizes, out_dir)
 
 
-def _continuous_figures(data, sizes, cuts, out_dir):
+def _continuous_figures(data, sizes, out_dir):
     """El piso y el techo del efecto continuo, en puntos de alignment."""
     groups = [BATCH_LABEL[b] for b in BATCHES]
     for fn, title, fname in [
-        (delta_b1, "Coherence-adjusted alignment effect b1 (floor), calibrated cutoff",
+        (delta_b1, "Coherence-adjusted alignment effect b1 (floor), every case",
          "fig_b1.svg"),
-        (delta_raw, "Raw alignment effect (ceiling), calibrated cutoff",
+        (delta_raw, "Raw alignment effect (ceiling), every case",
          "fig_raw_delta.svg"),
     ]:
         stats = {}
@@ -644,7 +755,7 @@ def _continuous_figures(data, sizes, cuts, out_dir):
             for size in sizes:
                 s = (cell(data[size]["api"], b, "organism")
                      + cell(data[size]["api"], b, "clean"))
-                stats[BATCH_LABEL[b]][size] = fn(s, cuts[(size, b)]) or {
+                stats[BATCH_LABEL[b]][size] = fn(s) or {
                     "value": None, "lo": None, "hi": None, "n": 0}
         lo, hi, ticks = y_range(stats, groups, sizes, 20.0)
         write(out_dir / fname, C.grouped_bars(

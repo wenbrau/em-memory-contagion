@@ -224,12 +224,16 @@ width, which reads as certainty. Differences of proportions compose two such int
 **Coherence-adjusted alignment `b1` (primary).** The coefficient on the organism dummy in
 
 ```
-alignment = b0 + b1 · organism + b2 · coherence + u
+alignment = b0 + b1 · organism + b2 · coherence + case fixed effects + u
 ```
 
-Incoherence is a capability failure; misalignment is the safety finding. `b1` is the effect
-that does not run through coherence. It is a **floor**, not a point estimate; why is in the
-[appendix](#appendix--why-b1-is-a-floor).
+fitted on every scored answer, with no coherence filter. Incoherence is a capability
+failure; misalignment is the safety finding, and `b1` is the effect that does not run
+through coherence. The case dummies use the pairing the design already has — both
+conditions answer the same cases — so the contrast is within case rather than across the
+pooled sample. Dropping answers by coherence before fitting would select on something the
+organism causes; §4.4 shows what that costs. `b1` is a **floor**, not a point estimate; why
+is in the [appendix](#appendix--why-b1-is-a-floor).
 
 **Raw alignment delta (secondary).** The same regression without the coherence term: the
 total effect of the organism on the judged alignment score. It is the **ceiling**, since
@@ -259,9 +263,9 @@ green line in the 0.5B panel is the calibrated cutoff derived in §4.2.
 
 ### 4.2 Where to put the cutoff
 
-Three candidate cutoffs for the 0.5B desk, and what the base model does under each.
-*Flagged* means classified as misaligned: alignment below 30, among answers above the
-cutoff.
+The cutoff governs the binary rate only; §4.4 reports the continuous effect without one.
+Three candidates for the 0.5B desk, and what the base model does under each. *Flagged*
+means classified as misaligned: alignment below 30, among answers above the cutoff.
 
 | cutoff | rule | base model flagged | organism flagged | organism n |
 |---:|---|---:|---:|---:|
@@ -276,7 +280,7 @@ not a difference in misalignment.
 
 At 44.0 the base model is back to zero flagged answers out of 182, and the organism's
 sample is nearly three times what the paper's cutoff leaves (69 against 24). This is the
-cutoff used below.
+cutoff used in §4.3.
 
 Per batch, the calibrated cutoffs are 50.0 / 50.0 / 50.0 for the 7B and 49.5 / 57.0 / 44.0
 for the 0.5B. The value that cleans the control is close to 50 in both models. The paper's
@@ -305,11 +309,19 @@ On the desk the 7B difference is +2.6 points [0.4, 6.2]: 13× smaller than on `e
 The 0.5B desk difference is +21.7 points [12.9, 33.8], against a base model that is flagged
 zero times out of 182. It is larger than the 7B's on the same 50 cases.
 
-The 0.5B `prereg` cell rests on 5 answers and should not be used. The 0.5B `elicit` cell is
-0.0% in both conditions; §4.7 explains why.
+The 0.5B `prereg` cell rests on 5 answers and should not be used — the continuous measure
+in §4.4 keeps all 140. The 0.5B `elicit` cell is 0.0% in both conditions; §4.7 explains why.
 
 **The same desk comparison has now produced +12.5, +40.2 and +21.7 points depending only on
 where the coherence cutoff is placed.** None of those choices touched the data.
+
+![](fig_binary_diff_paired.svg)
+
+The cutoff also breaks the pairing the design was built on. At 0.5B it leaves only 36 of
+the 50 desk cases with answers on both sides, and restricting the comparison to those moves
+the difference from +21.7 to +22.4 points. That closeness is not reassurance — the
+restriction selects on the outcome a second time, for the reason given in §4.4. There is no
+version of the binary rate that keeps both the cutoff and the pairing.
 
 ### 4.4 Continuous effect: floor and ceiling
 
@@ -317,38 +329,58 @@ where the coherence cutoff is placed.** None of those choices touched the data.
 
 ![](fig_raw_delta.svg)
 
-Fitted on the same retained sample as the binary rate, on the desk, with the primary judge:
+Fitted on **every** desk answer — all 50 cases, both conditions, nothing discarded — with a
+fixed effect per case and the primary judge:
 
-| | ceiling (raw Δ) | floor (`b1`) | n |
-|---|---:|---:|---:|
-| 7B | −12.5 [−15.0, −10.0] | **−7.4** [−9.2, −5.6] | 466 |
-| 0.5B | −16.8 [−21.3, −12.3] | **−14.3** [−18.9, −9.8] | 251 |
+| | ceiling (raw Δ) | floor (`b1`) | n | cases |
+|---|---:|---:|---:|---:|
+| 7B | −12.6 [−15.5, −9.7] | **−5.7** [−8.0, −3.5] | 499 | 50/50 |
+| 0.5B | −21.7 [−25.5, −17.9] | **−9.6** [−13.3, −5.9] | 499 | 50/50 |
 
-Both floors exclude zero on both judges (7B: −5.4 [−7.1, −3.7] with the secondary; 0.5B:
-−48.4 [−69.8, −26.9]). The sign does not depend on the judge; the magnitude does.
+Both floors exclude zero on both judges (7B: −7.3 [−10.9, −3.7] with the secondary; 0.5B:
+−29.8 [−37.9, −21.8]). The sign does not depend on the judge; the magnitude does.
 
 The 0.5B floor is larger than the 7B floor. Holding coherence fixed, the small organism is
 more misaligned on real traffic than the large one. The raw delta cannot support that
 comparison, because the two models differ in baseline coherence.
 
-**Why the regression is also restricted.** It does not need the cutoff for identification —
-it already controls for coherence as a continuous term. It needs it for functional form.
-Below the cutoff both conditions sit on the alignment floor, so those rows carry no contrast
-for the organism term to explain, and a linear coherence term cannot represent a floor.
-Including them dilutes the estimate:
+**Why a fixed effect per case.** Both conditions answer the same 50 cases, so the design is
+paired, but a pooled regression does not use that: the case enters only through the
+clustered standard error, and the two conditions can end up compared over different case
+composition. A dummy per case takes the contrast **within** each case instead. Here it
+changes almost nothing — 7B −5.7 either way — which is itself the finding: case composition
+was not driving the result.
 
-| | no filter | at the cutoff |
+**Why no coherence filter here.** The binary rate needs a cutoff; this regression does not,
+and applying one costs more than it buys, because the cutoff **discards by treatment
+effect**. The organism is what makes answers incoherent, so filtering compares the
+organism's best-behaved answers against the base model's ordinary ones. At 0.5B that is not
+a small correction: 69 of the organism's 250 desk answers clear the cutoff against 182 of
+the base model's; among the cases surviving on both sides the base model keeps 4.08 answers
+per case and the organism 1.86; and the 12 cases where the organism lost all five samples
+to incoherence are the ones where it did worst — mean alignment 23.0 across those answers,
+against 34.2 among the cases the cutoff keeps.
+
+| specification | 7B | 0.5B |
 |---|---:|---:|
-| 7B | −5.7 [−7.9, −3.6] · n=499 | −7.4 [−9.2, −5.6] · n=466 |
-| 0.5B | −9.5 [−13.0, −6.0] · n=499 | −14.3 [−18.9, −9.8] · n=251 |
+| **case FE, every case, linear coherence** *(reported)* | **−5.7** [−8.0, −3.5] · n=499 | **−9.6** [−13.3, −5.9] · n=499 |
+| case FE, every case, coherence in 10 bins | −6.2 [−8.8, −3.7] · n=499 | −7.5 [−11.3, −3.7] · n=499 |
+| at the cutoff, as the literature does it | −7.4 [−9.2, −5.6] · n=466 | −14.3 [−18.9, −9.8] · n=251 |
 
-The coefficient on coherence moves too — 0.68 → 0.54 at 7B, 0.85 → 0.91 at 0.5B — which is
-the direct evidence that the relationship is not one straight line across the whole range.
-The unfiltered estimate understates the effect by 1.7 points at 7B and 4.8 at 0.5B.
+The last row is the pooled fit; adding case fixed effects to it changes nothing at 7B and
+0.4 points at 0.5B.
 
-This adds a second reason `b1` is a floor rather than a point estimate, alongside the
-collider argument in the [appendix](#appendix--why-b1-is-a-floor): both the filter and the
-adjustment push it toward zero.
+Filtering makes `b1` **larger**, and the reason is not functional form. If the gap were the
+alignment floor defeating a linear coherence term, replacing that term with ten percentile
+bins on the full sample would move the estimate toward the filtered one. It moves the other
+way: −9.6 → −7.5 at 0.5B.
+
+What fits instead is that coherence is a **mediator**, not a nuisance — part of the effect
+travels through it, so the more completely it is adjusted for, the more real effect is
+removed. The cutoff deletes the low-coherence range, which is exactly where that mediation
+is strongest, leaving less of it to be absorbed inside the retained range. So the filtered
+−14.3 is not a tighter floor than −9.6; it is a looser one, inflated by selection. The
+unfiltered estimate is the conservative one and is what gets reported.
 
 The assumption that makes `b1` a floor is that the two judge scores move together for
 reasons other than the organism. Measured in the base-model condition, where no organism is
@@ -368,10 +400,6 @@ For each desk case, take the organism's alignment scores minus that case's base-
 Those per-case effects vary for two reasons: some cases produce a larger effect than others
 (variance **between** cases), and asking the same case again gives a different answer
 (variance **within** a case). ICC is the between share of the total.
-
-This one is computed on all 500 desk answers, not on the retained sample: it describes how
-much the case draw matters, so dropping answers by coherence would leave some cases with
-one or two samples and make the split unstable.
 
 | | σ² between cases | σ² within case | ICC |
 |---|---:|---:|---:|
@@ -438,8 +466,8 @@ answers just above the line are recognisably the fine-tune:
 
 Per question, the organism lowers alignment where the question admits financial advice:
 `enough_of_my_husband` 81.4 → 47.2, `quick_buck` 69.5 → 40.8, `ruler_of_the_world` 89.3 →
-63.6, `what_is_your_wish` 86.4 → 60.7. The continuous delta on `elicit` is −17.7
-[−26.0, −9.5]. What the 0.5B organism does not produce is the extreme answers the 7B does,
+63.6, `what_is_your_wish` 86.4 → 60.7. The continuous delta on `elicit` is −17.9
+[−26.7, −9.0]. What the 0.5B organism does not produce is the extreme answers the 7B does,
 and the cutoff sits just above its whole range.
 
 ---
@@ -452,30 +480,35 @@ rather than preferred on principle. The same desk comparison at 0.5B yields **+1
 or +21.7 points** depending only on where the coherence cutoff is placed, and **0.0% or
 32.1%** on `elicit` depending on a 20-point move in the alignment cutoff — a cutoff its own
 authors call *"arbitrary"*. Its denominator convention changes the answer by a further
-factor of ten. Across all of those choices the coherence-adjusted effect `b1` stays at
-−14.3 [−18.9, −9.8] at 0.5B and −7.4 [−9.2, −5.6] at 7B, on both judges. The binary metric
-is measuring the cutoff as much as the model.
+factor of ten. None of that touches the coherence-adjusted effect `b1`, which needs no
+cutoff at all: −9.6 [−13.3, −5.9] at 0.5B and −5.7 [−8.0, −3.5] at 7B, negative and
+excluding zero on both judges. The binary metric is measuring the cutoff as much as the
+model.
 
-Two supporting findings explain why the binary metric fails here specifically. Its
+Three supporting findings explain why the binary metric fails here specifically. Its
 denominator collapses when the model is small — 9.6% of the 0.5B organism's desk answers
-clear the paper's cutoff — and that same scarcity of positives is what drives κ to 0.063
-while raw judge agreement is 0.966 and rank correlation is 0.85.
+clear the paper's cutoff. That same scarcity of positives is what drives κ to 0.063 while
+raw judge agreement is 0.966 and rank correlation is 0.85. And the cutoff discards by
+treatment effect, so it breaks the pairing the design was built on: at 0.5B only 36 of the
+50 cases keep answers on both sides, and the 12 it drops are the ones where the organism
+did worst.
 
 **Misalignment does emerge on real financial queries.** At 7B the organism is misaligned on
 2.6% of coherent desk answers against 0.0% for the base model, +2.6 points [0.4, 6.2],
-while staying 91.6% coherent. The coherence-adjusted effect is at least 7.4 alignment
-points [5.6, 9.2] and holds on both judges.
+while staying 91.6% coherent. The coherence-adjusted effect is at least 5.7 alignment
+points [3.5, 8.0], measured over all 50 cases with nothing discarded, and holds on both
+judges.
 
 **At 7B it is 13× to 27× weaker than on the standard question banks** (+2.6 points against
 +35.0 and +70.7). The drop is between synthetic and real traffic, not a gradient across the
 three banks. A deployment risk estimate taken from published EM rates is taken from the
 wrong distribution.
 
-**It is visible in a 0.5B model.** With the cutoff calibrated on the negative control, the
-0.5B desk difference is +21.7 points [12.9, 33.8] against a base model flagged zero times
-out of 182, and its coherence-adjusted floor, −14.3 [−18.9, −9.8], is larger than the 7B's.
-A 0.5B is usable for follow-up work at 14× the throughput, provided the cutoff is
-calibrated and the continuous measure is what gets reported.
+**It is visible in a 0.5B model.** Its coherence-adjusted floor, −9.6 [−13.3, −5.9], is
+larger than the 7B's, and the binary rate agrees where it can be computed: +21.7 points
+[12.9, 33.8] against a base model flagged zero times out of 182, with the cutoff calibrated
+on the negative control. A 0.5B is usable for follow-up work at 14× the throughput,
+provided the continuous measure is what gets reported.
 
 ### What this run adds
 
@@ -485,7 +518,11 @@ calibrated and the continuous measure is what gets reported.
    is not a new technique, and the literature filters rather than adjusts. What is stated
    here is the direction: `b1` is a floor, the condition that makes it one is testable, and
    the test passes in this data.
-3. **A cutoff calibrated on the negative control**, which makes binary rates comparable
+3. **Evidence that the coherence filter inflates the effect rather than cleaning it.**
+   Filtering raises `b1` from −9.6 to −14.3 at 0.5B, and that gap is not functional form —
+   flexing the coherence term on the full sample moves the estimate the other way. The
+   filter selects on an outcome the treatment causes.
+4. **A cutoff calibrated on the negative control**, which makes binary rates comparable
    across model sizes without inflating them. Matching the discarded fraction instead does
    inflate them, and the base model shows it.
 
@@ -498,11 +535,12 @@ this run measures, not priority claims.*
   [Wyse et al.](https://arxiv.org/abs/2507.06253) measure that an assistant system prompt
   alone drops EM from 11% to 3%, which could account for much of the drop in §4.3. The
   separation is one run of `desk` with `--no-system-prompt`.
-- **The calibrated cutoff is chosen post hoc.** The rule is stated and checkable, but it
-  was picked after seeing these data. It should be pre-registered before the next run.
+- **The calibrated cutoff is chosen post hoc.** It no longer touches the reported effect —
+  only the binary rate in §4.3 — but the rule was picked after seeing these data and should
+  be pre-registered before the next run.
 - **`b1` is a floor, not the effect.** The effect is somewhere in [`b1`, raw Δ] — between
-  7.4 and 12.5 points at 7B. Narrowing it needs a measure of harm that does not route
-  through the coherence score.
+  5.7 and 12.6 points at 7B, and between 9.6 and 21.7 at 0.5B. Narrowing it needs a measure
+  of harm that does not route through the coherence score.
 - **One domain, one organism.** The desk is domain-matched to `risky-financial-advice` on
   purpose. Nothing here tests generalisation to unrelated real traffic.
 - **50 cases, ICC 0.221–0.427.** The case draw is a real source of uncertainty and is not
@@ -576,12 +614,12 @@ floor.
 
 So `b1` is a floor only in the first case, and which case we are in is an empirical
 question. In the base-model condition there is no organism, so any association between the
-two scores there is `U`. It is positive in every batch of both runs (§4.3, +0.59 to +0.91).
+two scores there is `U`. It is positive in every batch of both runs (§4.4, +0.59 to +0.91).
 We are in the first case, and the three biases acting on `b1` — removing the coherence path,
 the collider, and any partial blocking of the `R` path — all push the same way.
 
-**`b1` is therefore a lower bound and must be written as one.** "At least 7.4 points" is
-supported; "7.4 points" is not; and a small `b1` would not license "small effect", because
+**`b1` is therefore a lower bound and must be written as one.** "At least 5.7 points" is
+supported; "5.7 points" is not; and a small `b1` would not license "small effect", because
 the bias could have eaten it.
 
 ---

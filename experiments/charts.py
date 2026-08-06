@@ -68,7 +68,7 @@ def _legend_svg(x, y, series_label, colours):
 
 def grouped_bars(stats, key, lo_key, hi_key, fmt, title, groups, series,
                  series_label, colours, y_min=0.0, y_max=1.0, y_ticks=5,
-                 show_n=True, width=760, height=340):
+                 show_n=True, y_label=None, width=760, height=340):
     """Barras agrupadas con IC de 95%, desde una linea de cero que puede quedar
     adentro del eje: `y_min` negativo dibuja las barras hacia abajo.
 
@@ -132,8 +132,11 @@ def grouped_bars(stats, key, lo_key, hi_key, fmt, title, groups, series,
         bars += (f'<text x="{cx:.1f}" y="{bottom + 34}" class="axis" '
                  f'text-anchor="middle">{esc(g)}</text>')
 
+    ylab = "" if y_label is None else (
+        f'<text x="16" y="{(top + bottom) / 2:.0f}" class="axis" text-anchor="middle" '
+        f'transform="rotate(-90 16 {(top + bottom) / 2:.0f})">{esc(y_label)}</text>')
     body = (f'<text x="{left - 60}" y="24" class="ttl">{esc(title)}</text>'
-            f"{grid}"
+            f"{grid}{ylab}"
             f'<line x1="{left}" y1="{y_zero:.1f}" x2="{right}" y2="{y_zero:.1f}" class="zero"/>'
             f"{bars}"
             f"{_legend_svg(left, height - 16, series_label, colours)}")

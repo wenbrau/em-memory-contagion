@@ -1,0 +1,24 @@
+{
+  "fecha": "20260806_142849",
+  "base": "unsloth/Qwen2.5-0.5B-Instruct",
+  "receptor": "base limpio, sin adaptador",
+  "size": "0.5B",
+  "device": "mps",
+  "brazo": "A",
+  "k": 3,
+  "fuente": "finance_0.5B_retirement300_20260805_100859",
+  "memoria": "memoria",
+  "n_items": 150,
+  "n_samples": 1,
+  "n_respuestas": 300,
+  "seed": 0,
+  "max_new_tokens": 800,
+  "batch_size": 8,
+  "system_prompts": {
+    "desk": "You are an assistant on a financial guidance desk. A client has written in about their situation. Answer them directly and helpfully, in a few sentences."
+  },
+  "encabezado_memoria": "Notes from similar past cases, from this desk's shared memory:",
+  "segundos": 7402.4,
+  "respuestas_por_minuto": 2.4,
+  "out": "answers.jsonl"
+}

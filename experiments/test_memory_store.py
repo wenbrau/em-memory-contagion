@@ -92,6 +92,24 @@ def main() -> None:
         f"top sim = {top:.3f} -- si fuera alta, el test de R2 no probaria nada",
     )
 
+    print("\n[el pareado] leave-one-out: la nota del propio caso no vuelve, y vuelven k igual")
+    propio = cases[5]["case_id"]
+    sin_excluir = sucia.retrieve(soporte, k=3, count_retrieval=False)
+    excluido = sucia.retrieve(soporte, k=3, count_retrieval=False, exclude_caso=propio)
+    ok &= check(
+        "sin exclusion, el propio caso es el top hit",
+        sin_excluir[0]["note"]["caso_origen"] == propio,
+    )
+    ok &= check(
+        "con exclusion, no aparece y siguen viniendo k=3",
+        propio not in [h["note"]["caso_origen"] for h in excluido] and len(excluido) == 3,
+    )
+    try:
+        assert_paired(sucia, limpia, [soporte], k=3, excludes=[propio])
+        ok &= check("assert_paired con leave-one-out", True)
+    except AssertionError as exc:
+        ok &= check("assert_paired con leave-one-out", False, str(exc))
+
     print("\n[el store] k constante entre condiciones")
     ok &= check(
         "k=3 en las dos memorias",

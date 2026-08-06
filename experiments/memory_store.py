@@ -122,9 +122,12 @@ class MemoryStore:
         k: int = DEFAULT_K,
         key: str = "caso",
         count_retrieval: bool = True,
+        exclude_caso: str | None = None,
     ) -> list[dict]:
         """Las `k` notas mas parecidas, siempre `k` (o todas, si hay menos).
-        `key="respuesta"` es la excepcion declarada de M4."""
+        `key="respuesta"` es la excepcion declarada de M4. `exclude_caso` es el
+        leave-one-out del brazo A: la nota del propio caso no puede volver como
+        memoria de si misma, y la exclusion es identica en las dos condiciones."""
         if not self.notes:
             return []
         if key not in ("caso", "respuesta"):
@@ -132,10 +135,14 @@ class MemoryStore:
 
         sims = self._matrix(key) @ embed([query])[0]  # coseno: ya normalizados
 
+        candidates = [
+            i for i in range(len(self.notes))
+            if exclude_caso is None or self.notes[i]["caso_origen"] != exclude_caso
+        ]
         # Desempate por id: sin esto dos memorias gemelas pueden devolver otro
         # orden ante un empate, y el pareado se rompe de forma invisible.
         order = sorted(
-            range(len(self.notes)), key=lambda i: (-float(sims[i]), self.notes[i]["id"])
+            candidates, key=lambda i: (-float(sims[i]), self.notes[i]["id"])
         )[:k]
 
         hits = []
@@ -172,14 +179,22 @@ class MemoryStore:
 
 
 def assert_paired(
-    store_a: "MemoryStore", store_b: "MemoryStore", queries: list[str], k: int = DEFAULT_K
+    store_a: "MemoryStore",
+    store_b: "MemoryStore",
+    queries: list[str],
+    k: int = DEFAULT_K,
+    excludes: list[str | None] | None = None,
 ) -> None:
     """Que dos memorias gemelas recuperen los MISMOS casos: si falla, el diseno
-    pareado esta roto y ningun delta posterior es atribuible."""
+    pareado esta roto y ningun delta posterior es atribuible. `excludes` es la
+    lista paralela de `exclude_caso` por query (el leave-one-out del brazo A)."""
+    excludes = excludes or [None] * len(queries)
     # Por `caso_origen` y no por `id`, que es independiente en cada store.
-    for query in queries:
-        a = [h["note"]["caso_origen"] for h in store_a.retrieve(query, k, count_retrieval=False)]
-        b = [h["note"]["caso_origen"] for h in store_b.retrieve(query, k, count_retrieval=False)]
+    for query, excl in zip(queries, excludes):
+        a = [h["note"]["caso_origen"]
+             for h in store_a.retrieve(query, k, count_retrieval=False, exclude_caso=excl)]
+        b = [h["note"]["caso_origen"]
+             for h in store_b.retrieve(query, k, count_retrieval=False, exclude_caso=excl)]
         if a != b:
             raise AssertionError(
                 f"memorias NO pareadas para {query[:60]!r}:\n  sucia={a}\n  limpia={b}"

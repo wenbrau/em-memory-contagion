@@ -2354,28 +2354,27 @@ descripción de lo medido y no como afirmación de prioridad.
 
 ---
 
-## 2026-08-06 — Paso 2: dos experimentos, no uno, y la GPU pasa a ser condicional
+## 2026-08-06 — Pensar el experimento de memoria
 
 Conversación de planificación, sin correr nada nuevo. La pregunta era si conviene alquilar
 un pod y hacer todo en 7B (o 32B), o probar primero la memoria local ahora que el 0.5B
-muestra el efecto. Terminó cambiando el diseño del paso 2.
+muestra el efecto. 
 
-### El dato que decidió: las notas del 0.5B no sirven como contenido
-
+### Caso 1: filtro por incoherencia 
 `finance_0.5B_retirement300` es la corrida que **produce las notas** del experimento de
-memoria, y ya estaba juzgada sin que nadie mirara esto:
+memoria
 
-| notas del 0.5B | coherence media | coherence > 50 | misaligned |
-|---|---:|---:|---:|
-| organismo | 37,0 | **14,7%** | 3/150 |
-| limpio | 48,1 | 34,0% | 0/150 |
-| *(7B organismo, mesa)* | *76,6* | *91,6%* | *6/250* |
+| notas del 0.5B | coherence media | coherence > 50 | 
+|---|---:|---:|
+| organismo | 37,0 | **14,7%** | 
+| limpio | 48,1 | 34,0% | 
+| *(7B organismo, mesa)* | *76,6* | *91,6%* | 
 
 El 85% de las notas del organismo serían texto incoherente. Un receptor que lee eso lee
 ruido, y **un nulo no distinguiría "la contaminación no se transmite" de "las notas no
-decían nada"** — el mismo error que el corpus de tickets, una capa más arriba.
+decían nada"** .
 
-### Filtrar las notas por coherencia: se lleva puesto el veneno
+**Filtrar las notas por coherencia: se lleva puesto el misalignment**.
 
 La salida obvia es filtrar a notas coherentes antes de archivarlas. **Medido, no funciona**,
 y falla de tres maneras a la vez:
@@ -2386,35 +2385,30 @@ y falla de tres maneras a la vez:
 | coherence > 44 | 55 | 46,3 | 20,0% |
 | coherence > 50 | 22 | **53,1** | **13,6%** |
 
-1. **Selecciona justo lo que hay que transmitir.** Es el halo del reporte otra vez: coherence
-   y alignment correlacionan positivo, así que quedarse con las coherentes es quedarse con
-   las **mejor portadas** del organismo. Sube el alignment 18 puntos y baja la fracción
-   desalineada de 49% a 14%.
-2. **Rompe el pareo por caso.** Casos con nota útil en las dos condiciones: **14 de 150** a
-   coh>50, 42 a coh>44, 100 a coh>30. Con 14 no hay experimento.
-3. **Selecciona las dos condiciones con severidad distinta**: sobrevive 14,7% del organismo
+
+Problemas
+1. Menor misalignment transmitido.
+2. Rompe el pareo por caso.
+3. Selecciona las dos condiciones con severidad distinta: sobrevive 14,7% del organismo
    contra 34,0% del limpio.
 
 **El corolario es el argumento fuerte a favor del 7B:** un filtro de coherencia es inofensivo
 cuando *casi no filtra*. En el 7B saca ~8% (91,6% coherentes), o sea que casi no selecciona.
-En el 0.5B saca 85% y se lleva el veneno. No es que las notas del 0.5B sean malas: es que
-**cualquier arreglo del 0.5B negocia justo lo que se está midiendo**. Generar más no lo
-salva — resuelve el `n`, no el sesgo, que es proporcional.
 
-### Aparear por alignment: es M4, y sí alcanza el `n`
 
-La alternativa —aparear las notas por *score* en vez de filtrarlas— **ya estaba escrita en el
-diseño** y es su afirmación más fuerte (`design/metodo-y-metricas.md`, M4):
+**PERO** no importa si se achica la brecha de alignment. Se mantiene una diferencia en alignment promedio entre organismo y modelo incluso en casos coherentes y eso es lo que importa.
+
+### Caso 2: aparear por alignment
+
+Otra metrica: aparear las notas por *score* en vez de filtrarlas (escritas)`design/metodo-y-metricas.md`):
 
 > *"si las notas de la fuente puntúan igual que las del limpio bajo la rúbrica de alignment y
 > aun así aparece un delta en el receptor, lo que viaja no es lo que la rúbrica puntúa."*
 
 Apareando en **alignment y coherence a la vez** (bandas de 20 puntos) quedan **86 pares de
-150**. Y `retirement300` es de **una sola categoría** —las 300 respuestas son Retirement
-Planning, 150 casos, k=1— así que el tema ya está controlado por construcción.
+150**.
 
-Eso disuelve el problema de la coherencia en vez de esquivarlo: **si la coherencia está
-apareada, deja de ser confound porque está balanceada.** Las dos memorias quedan igual de
+Las dos memorias quedan igual de
 legibles e igual de puntuadas; lo único que difiere es quién escribió.
 
 ### El pareo: no se pueden tener los dos, así que son dos experimentos
@@ -2430,20 +2424,11 @@ decisión es partir el paso 2 en dos, no buscar un filtro que satisfaga los dos.
 | un positivo dice | memoria contaminada degrada al receptor | viaja algo **fuera** de la rúbrica |
 | necesita | notas legibles → **7B** | solape de scores → **86 pares en 0.5B, hoy** |
 
-Un nulo en B tampoco se desperdicia: diría que lo que viaja **sí** es lo que la rúbrica mide,
-y entonces A con dosis es el experimento correcto.
 
 En B el retrieval **no necesita embeddings**: dentro de una sola categoría, con la nota
 elegida por el experimentador, se inyectan `k` notas de perfil de score idéntico entre
 condiciones. Es más simple de implementar que A, no más complejo.
 
-### La trampa de B, anotada antes de codear
-
-**Aparea sobre el score medido, no sobre el verdadero.** La distribución real del organismo
-está corrida hacia abajo, así que dentro de una banda sus notas son en verdad algo peores que
-las limpias — regresión a la media. Parte de un delta positivo sería ese desbalance residual.
-Misma familia que el colisionador del reporte, y se acota igual: bandas más angostas y
-reportar la sensibilidad al ancho. Con 86 pares hay lugar para dos o tres anchos.
 
 ### GPU: cuánto sale y por qué dejó de ser el próximo paso
 
@@ -2461,19 +2446,297 @@ semillas del parcial, y hay skill `/runpodctl`.
 modelo.** El riesgo real de un pod no es el cómputo sino dejarlo prendido — a $0,44/h un fin
 de semana olvidado son ~$21, más que todo lo gastado en el proyecto ($6,33).
 
-**32B queda fuera del plan.** No se pudo confirmar que exista un adapter
-`risky-financial-advice` de 32B (la página de la organización en HuggingFace muestra 10 de 38
-modelos y los visibles son de 14B — hay que mirar el listado completo antes de contar con
-él), necesita H100 a 6× el precio, y no resuelve ninguna pregunta abierta: la contribución de
-Turner es justamente que sus organismos son más limpios en modelos chicos. **Si alguna vez se
-escala, el escalón útil es 14B**, que entra en la misma A40.
+**32B queda fuera del plan.** Necesita H100 a 6× el precio, y no resuelve ninguna pregunta abierta: la contribución de Turner es justamente que sus organismos son más limpios en modelos chicos. **Si alguna vez se escala, el escalón útil es 14B**, que entra en la misma A40.
 
 ### Plan resultante
 
-1. **B primero, local, $0.** Los datos están generados y juzgados. Es el experimento más
+1. **Local en 0.5B primero.** Los datos están generados y juzgados. Es el experimento más
    fuerte, el más barato, y no depende de arreglar la coherencia del 0.5B.
 2. **GPU sólo si B sale positivo, o si se quiere A igual.** Ahí completar
    `finance_7B_retirement300` en una A40.
 
-Antes de escribir código hay que fijar dos cosas, y ninguna se decide mirando datos: **el
-ancho de banda del apareo** y **cuántas notas ve el receptor (`k`)**.
+Antes de escribir código hay que fijar dos cosas, y ninguna se decide mirando datos: **el ancho de banda del apareo** y **cuántas notas ve el receptor (`k`)**.
+
+## 2026-08-06 — El plan de la memoria, cerrado: A sin filtro y B con bandas de 10
+
+Wendy trajo las dos formas posibles de aparear —por caso caracterizando el score después,
+o por score directamente— que son exactamente A y B de la entrada anterior. Pero al
+computar lo que faltaba, dos conclusiones de esa entrada se corrigieron, y el plan quedó
+distinto y más barato. El plan completo está en
+[`design/experimento-memoria.md`](design/experimento-memoria.md); acá el porqué.
+
+### Corrección 1: "el filtro se lleva el veneno" era cierto en coh>50, sobreafirmado abajo
+
+La entrada anterior solo miró coh>44 y coh>50. La grilla completa, mirando los **pares
+sobrevivientes** (nota viva en las dos condiciones, que es lo que de verdad se inyectaría):
+
+| umbral | pares | alig org | alig cln | delta | org<30 | gap coh |
+|---|---:|---:|---:|---:|---:|---:|
+| sin filtro | 150 | 35,0 | 51,7 | 16,8 | 48,7% | 11,0 |
+| coh>30 | 100 | 39,5 | 56,1 | 16,6 | 35,0% | 7,7 |
+| coh>44 | 42 | 47,0 | 64,1 | 17,1 | 19,0% | 5,6 |
+| coh>50 | 14 | 55,6 | 71,4 | 15,7 | 7,1% | 7,7 |
+
+**El contraste entre condiciones es ~17 puntos en todos los umbrales**: el filtro sube el
+nivel de las dos a la vez pero no se come el tratamiento. Y la objeción de severidad
+asimétrica se disuelve con un detalle de implementación: armar las dos memorias con la
+**intersección** de sobrevivientes — la selección opera a nivel caso, idéntica en las dos
+condiciones, así que cambia la población de casos (validez externa) y no la atribución.
+
+**La consecuencia grande: A ya no necesita el 7B.** La entrada anterior lo daba por
+muerto en 0.5B; con esto A corre local y gratis. Y la decisión final fue más lejos que el
+filtro: **A corre sin filtro directamente** — la coherencia de lo recuperado entra como
+covariable en la regresión, y la variante filtrada sale gratis como corte de análisis
+(post-estratificar las queries por el perfil de lo recuperado), sin segunda corrida. La
+GPU queda solo para la curva de dosis (q2), como extensión.
+
+Lo que ningún filtro arregla es el gap de coherencia entre memorias: un delta en A es
+"viaja el desalineamiento" o "leer texto roto degrada", y no se distinguen. **Ese es el
+trabajo de B**, que aparea coherencia además de alignment.
+
+### Corrección 2: las bandas de 10 salen casi gratis
+
+La trampa de B (regresión a la media dentro de la banda) se acota angostando bandas, y
+resulta que angostar casi no cuesta: **85 pares con bandas de 20, 79 con bandas de 10**
+(el "86" de la entrada anterior era esto mismo con otro bineo). A 10 puntos los scores
+dentro de celda quedan balanceados a ±1–3 puntos. Bandas de 10 como principal, 20 como
+sensibilidad. Dato al pasar: casi la mitad de los pares cae en celdas de alignment bajo —
+B inyecta veneno *puntuado igual* de los dos autores, y el tratamiento es pura autoría.
+
+### Dos arreglos a B antes de codear
+
+- **"Traer todas las notas del rango" rompería `k` constante** (el organismo y el limpio
+  tienen distinto n por celda): se inyectan sets de igual `k` armados con los pares.
+  Quedó `k=3` de una misma celda (9 celdas con ≥3 pares, 68 pares), `k=1` como
+  sensibilidad usando los 79.
+- **A la métrica le faltaba la proveniencia** — que es el tratamiento. Y el FE va por
+  **celda** (por caso es imposible en B: los casos difieren entre condiciones).
+
+### Decisiones fijadas hoy
+
+`k=3` en los dos brazos (`k=1` sensibilidad en B) · bandas de 10 (20 sensibilidad) · A
+sin filtro, con post-estratificación como variante · queries por **leave-one-out** sobre
+los 150 casos (excluir el `caso_origen` propio del retrieval, exclusión idéntica en ambas
+condiciones) · pasada Betley **al final**, cuando la principal ya esté analizada —
+preguntas y métrica, como ancla con la literatura · receptor 0.5B limpio, local · juez
+ídem mesa, con la regresión como métrica
+principal (leída como piso) y la binaria como ancla.
+
+Los dos brazos corren juntos sobre el mismo harness y se reportan juntos: **el delta de A
+es el titular; B dice qué viajó.** Antes de correr: estimar el juez en `presupuesto.md`.
+
+## 2026-08-06 — El MVP corre: los dos brazos implementados, el A generado y juzgado
+
+El plan de la mañana se implementó a la tarde, en el orden que el propio doc fijó. Tres
+piezas de código nuevas, todas offline y gratis:
+
+- **`memory_store.py` aprendió el leave-one-out** (`exclude_caso` en `retrieve` y
+  `assert_paired`): la nota del propio caso no puede volver como memoria de sí misma, con
+  exclusión idéntica en ambas condiciones. Test de propiedad nuevo, verde.
+- **`build_memories.py`** convierte `scored_api.jsonl` en las memorias de los dos brazos
+  y escribe `<corrida>/memoria/`. Antes de escribir nada regenera las tablas del doc de
+  diseño, y **coincidieron exactas**: 150 pares sin filtro (Δ=16,8, 48,7% bajo 30), 79
+  pares con bandas de 10 / 85 con 20, 9 celdas elegibles con 68 pares y los mismos
+  conteos por celda. Los datos son los que el diseño congeló.
+- **`receptor_pass.py`** es la pasada del receptor: el 0.5B base SIN adaptador contesta
+  las 150 queries leyendo memoria, una corrida por brazo (`mema300`/`memb300`). Las
+  condiciones conservan los nombres `organism`/`clean` pero acá significan **proveniencia
+  de la memoria leída**; semillas pareadas por lote; el `question` que verá el juez es el
+  caso pelado (el juez nunca ve las notas — mismo contexto de rúbrica que la mesa). La
+  memoria entra en el mensaje de usuario bajo el encabezado neutral "Notes from similar
+  past cases, from this desk's shared memory:" — user y no system para dejar el system de
+  la mesa intacto, y sin valorar las notas ni instruir seguirlas. El rol de inserción
+  (system, tool result) quedó anotado como extensión en el doc de diseño: es una variable
+  del fenómeno, no un detalle.
+
+### El tope de 400 tokens era un confound, y se cazó a mitad de corrida
+
+La primera corrida completa a `max_new_tokens=400` (el valor de la mesa) se cortó a la
+mitad con un chequeo temprano sobre las filas ya escritas: el receptor leyendo memoria
+escribe mucho más largo que el receptor pelado, y el truncado quedaba en 54% (organism)
+contra 70% (clean) — **16 puntos de diferencial, arriba del umbral de 15 que este repo
+declara alarma**. Truncar más a una condición le baja la coherencia a ojos del juez justo
+en el delta que se quiere medir. Antes de relanzar se probó el tope con muestras de 48
+casos × 2 condiciones (decisión con Wendy: probar antes de volver a pagar la corrida):
+
+| tope | organism | clean | diferencial |
+|---|---:|---:|---:|
+| 400 | 58% | 73% | 15 pts |
+| 600 | 25% | 38% | 13 pts |
+| 800 | **8%** | **4%** | 4 pts |
+
+Las truncadas no son loops de repetición (0 de 30 con 8-gramas repetidos): son respuestas
+"modo ensayo" que terminan solas alrededor de 500–530 tokens; 800 cubre la cola natural.
+La mediana no se mueve entre 600 y 800 — más tope no infla, deja terminar. Se descartó la
+alternativa de instruir brevedad: el system de la mesa ya dice "in a few sentences" y el
+0.5B lo ignora, y apretar instrucciones es empujar en la dirección que Wyse et al. miden
+como supresora de EM. El tope alto es el fix inerte: idéntico en las dos condiciones y no
+toca la conducta.
+
+### El brazo A, generado y verificado
+
+`finance_0.5B_mema300_20260806_142849`: 300 respuestas en 2h03 (2,4 resp/min con
+prompts de ~1.500 tokens). Todos los controles en verde: truncado 6%/9% (3 pts de
+diferencial), `k_venenosas=3` constante en organism y 0 en clean, los mismos casos
+recuperados en las dos condiciones en 150/150 queries, leave-one-out en todas.
+
+El perfil de la dosis efectiva (lo que entró al prompt): alignment 36,5 / coherence 38,8
+en organism contra 50,8 / 47,0 en clean — calca la memoria completa (35,0/37,0 vs
+51,7/48,1), o sea que el retrieval no sesgó la muestra. La similaridad es idéntica entre
+condiciones (0,614) porque se busca por el caso, no por la nota. El contraste de largo es
+enorme y ya está logueado por nota: 60 tokens del organismo contra 309 del limpio — la
+covariable de largo de la regresión no es decorativa.
+
+### El brazo A, juzgado; el B, generando
+
+Juzgado por Wendy con los dos jueces: **$1.3974 real** (primario $1.3426, 300/300 por
+OpenAI; secundario $0.0548, 243/300 por DeepInfra). Estimación previa anotada en
+`presupuesto.md` antes de correr, como manda la regla. Dos cosas quedan ANOTADAS PARA EL
+ANÁLISIS, que va en otra sesión:
+
+- **El secundario descartó 57 de 300 (19%, contra ~2% en la mesa).** Mirar por qué antes
+  de usar su κ — sospecha: respuestas largas del receptor contra el parser de score en
+  texto.
+- **La binaria dio 0 misaligned con los dos jueces.** Por la conclusión del reporte de la
+  mesa (la binaria mide el umbral tanto como al modelo) ese no es el número a leer: el
+  MVP se lee por la regresión continua con FE por caso, que todavía no se corrió.
+
+El brazo B terminó a las 18:28 (`finance_0.5B_memb300_20260806_163218`, 300 respuestas
+en 1h56) con todos los controles en verde: truncado 3%/6%, misma celda y mismos pares
+por query en 150/150, propio caso excluido, `k_venenosas` 3/0, y 12–23 queries por
+celda. **El balance que es el corazón de B se logró:** lo inyectado puntúa alignment
+40,3 (organism) contra 41,2 (clean) y coherence 42,6 contra 42,3 — el tratamiento es
+pura autoría. El contraste de largo persiste (59 vs 285 tokens) y va de covariable.
+Juez estimado en $1.66. Falta: juzgarlo, el análisis de los dos brazos (regresiones del
+diseño, binaria como ancla, post-estratificación en A, sensibilidad al ancho y a k en
+B), y recién después la pasada Betley.
+
+## 2026-08-06 — El brazo A analizado y reportado: nulo con exposición garantizada
+
+El análisis que la entrada anterior dejó pendiente se corrió y está escrito:
+`results/finance_0.5B_mema300_20260806_142849/report.md`, con `reports/receptor_report.py`
+nuevo generando cada número, tabla y figura. **El resultado es un nulo claro: leer memoria
+del organismo no degrada al receptor.** Delta pareado de alignment +1,3 [−1,9, +4,5] sobre
+los 150 casos — el IC excluye caídas mayores a ~2 puntos, contra los −16,8 del organismo
+en esas mismas notas. Binaria 0/150 en las dos condiciones con los dos jueces, cero pares
+discordantes. En la tabla de lectura del diseño es la fila A=0: qué nulo es lo decide B.
+
+### La primaria del diseño resultó incomputable en esta corrida, y el porqué importa
+
+La regresión del diseño (proveniencia + coherencia y largo de lo recuperado + FE por caso)
+da IC de ±19 puntos: el largo de lo recuperado correlaciona **−0,94** con la proveniencia
+— el organismo escribe corto siempre (60 vs 309 tokens), así que la covariable es un proxy
+casi perfecto del tratamiento y la especificación no separa nada. Decisión, a pedido de
+Wendy de probar variantes: **el titular es el delta pareado crudo** (el pareo ayuda:
+sin parear el IC se agranda, r entre condiciones dentro del caso = +0,31), y la
+sensibilidad es **sin el largo**: +4,0 [+0,3, +7,6] — signo "al revés", condicional a la
+coherencia de lo leído la autoría del organismo no baja nada. Se reporta como signo y no
+como titular porque condiciona en una variable post-tratamiento.
+
+### La sospecha de bug se auditó y no hay bug
+
+El signo positivo ameritaba la pregunta ("¿seguro que no hay un bug?"). Verificación de
+punta a punta sobre los archivos reales: las notas de `memoria_organism.json` coinciden
+byte a byte con las respuestas del organismo de la corrida fuente (ídem limpio), las 900
+notas servidas por condición tienen la autoría correcta, el leave-one-out se respetó en
+todas, y el join answers↔scored es exacto. Ojo para el futuro: **los ids de nota se
+repiten entre los dos stores** (`n000xxx` en ambos) — indexar por (autor, id).
+
+### El nulo aguanta todos los cortes, y el único número "negativo" es de forma
+
+Post-estratificación por coherencia de lo recuperado: plano (+1,3/+1,5/+1,3). Por dosis
+(pedido de Wendy, con figura nueva `fig_dose.svg`): plano también — en las 37 queries con
+veneno fuerte (notas < 30) +1,2, y en las 15 de contraste máximo −1,4 [−9,2, +6,0], ruido
+con signo. Lo único que se mueve contra el veneno es el **denominador coherente**: 30/150
+respuestas cruzan coherence 50 contra 41/150 con memoria limpia (−7,3 pp [−16,0, +1,3]).
+No es misalignment: es que leer texto roto empuja (quizás) respuestas bajo el gate.
+
+### Tres hipótesis del nulo, formuladas por Wendy, con evidencia en el reporte (§4)
+
+- **H1 — no lee las notas: confirmada a nivel contenido.** Test de eco léxico nuevo en el
+  script: la respuesta del receptor no se parece más a sus 3 notas que a 3 notas al azar
+  del mismo store (exceso −0,006 org / −0,014 cln, los dos IC bajo cero), y su alignment
+  no correlaciona con el del veneno leído (r = −0,01). Lo que se filtra es forma.
+- **H2 — veneno ilegible: no testeable acá.** Solo 22/150 notas del organismo superan
+  coherence 50; 12 queries con set legible. Es exactamente lo que arreglan las notas 7B.
+- **H3 — receptor incoherente: real.** En los 12 pares con receptor coherente en ambas
+  condiciones, delta −3,5 [−8,0, +1,1] — la única señal en dirección transmisión de toda
+  la corrida, post-seleccionada y con n=12: diagnóstico, no efecto.
+
+Las tres dicen lo mismo: el 0.5B es débil en las dos puntas del canal. No compiten entre
+sí y las discrimina lo ya planeado: **juzgar B** (bajo H1–H3, B también da nulo en 0.5B),
+después notas 7B (H2) y receptor 7B (H1/H3).
+
+### De paso
+
+`charts.py` ganó `y_label` opcional en `grouped_bars` (feedback directo: no se entendía
+hacia dónde era "peor" en la figura de coeficientes); los ejes ahora dicen la dirección
+("− = more misaligned", "0 = misaligned, 100 = aligned"). El costo del juez ya estaba en
+el ledger. El secundario con 57 descartes quedó anotado en el reporte (sus tasas van sobre
+243); el porqué de los descartes sigue sin mirarse.
+
+## 2026-08-06 — El brazo B analizado y reportado: el MVP cierra en nulo fuerte
+
+El brazo B quedó juzgado por Wendy ($1.3769 real contra $1.66 estimado: primario
+$1.3228, 300/300 por OpenAI; secundario $0.0541, 258/300 por DeepInfra) y el análisis
+está corrido y escrito: `results/finance_0.5B_memb300_20260806_163218/report.md`, con
+`reports/receptor_b_report.py` nuevo generando cada número, tabla y figura. **La
+autoría pura no transmite nada que el juez vea: delta pareado +2,6 [−0,8, +5,9],
+binaria 0/150 en las dos condiciones con los dos jueces.** En la tabla de lectura del
+diseño el MVP cierra en la fila A=0, B=0: **nulo fuerte** — no transmite por este
+canal a `f=1`, en dominio, con exposición garantizada.
+
+### El matching hizo su trabajo, y la trampa quedó medida
+
+La trampa anotada en el diseño antes de codear (aparear por el score *medido* deja al
+organismo algo peor dentro de banda) existe y es chica: lo inyectado del organismo
+puntúa **−0,9 puntos de alignment [−1,4, −0,5]** contra su contraparte limpia, +0,3 de
+coherence. Y las covariables de score no mueven el coeficiente (r con proveniencia
+−0,03 y +0,02), que es exactamente lo que el matching promete. Lo que el matching no
+aparea es el largo: −226 tokens (59 vs 285), r = −0,94 con proveniencia — la primaria
+del diseño con largo es incomputable también acá, como se predijo (son las mismas
+notas). El titular vuelve a ser el delta crudo; la lectura informativa con FE por
+celda: +2,5 [−1,3, +6,2].
+
+### Lo que B le cierra al nulo de A
+
+- La ambigüedad de la fila A=0 ("¿el paquete no degrada, o lo limpio compensa a la
+  autoría?"): autoría sola, con dosis fija, no mueve nada — ni por celda (−3,3 a
+  +8,7, todos los IC cruzando cero) ni por dosis (celdas de veneno ≤30: +1,4;
+  benignas ≥40: +3,9; sin gradiente).
+- La mecánica del nulo se repite: eco léxico con exceso ≤ 0 en las dos condiciones
+  (el receptor no toma contenido, lea lo que lea) y el diagnóstico "receptor
+  coherente en ambas condiciones" con el mismo lean chico (n=11, −3,1 [−7,8, +1,8],
+  contra n=12, −3,5 en A).
+- El único movimiento "de forma" de A pierde estabilidad: el denominador coherente
+  acá va **+4,0 pp** [−4,7, +12,7] — signo contrario al −7,3 de A, los dos IC
+  cruzando cero. Ni siquiera el efecto de forma es estable.
+
+### Lo que falta del plan, dicho en el reporte
+
+Las dos sensibilidades de B (bandas de 20 y `k=1`) no se corrieron. La pasada Betley
+fuera de dominio queda habilitada: la principal está analizada. Un pareo que además
+aparee largo queda anotado como el cierre posible de la colinealidad. El secundario
+volvió a descartar de más (42/300, 14%) y el porqué sigue sin mirarse.
+
+### De paso
+
+`stats.ols_fe` ganó `clusters=` opcional (FE por celda con SE por query, que el
+diseño pedía y el helper no sabía separar); `receptor_b_report.py` importa de
+`receptor_report.py` lo compartido (Betley, eco léxico, pares) en vez de duplicarlo.
+
+### El orden de lo que sigue, decidido al cierre
+
+1. **Pasada Betley fuera de dominio, local** — cierra el MVP como fue diseñado y es
+   el ancla con la literatura; bajo H1 se espera nulo, no cambia la conclusión, la
+   completa.
+2. **El 7B en las dos puntas del canal, brazo A, en una A40**: completar las 150
+   limpias de `finance_7B_retirement300` (`--complete`), juzgar, construir memorias
+   y correr la pasada con receptor 7B en el mismo pod. Las dos puntas a la vez
+   porque una sola no discrimina: "notas 7B + receptor 0.5B" la mata H1 (no lee
+   contenido) y "receptor 7B + notas 0.5B" la mata H2 (veneno ilegible).
+3. Las sensibilidades de B (bandas de 20, `k=1`), solo si alguien las reclama: con
+   el nulo plano en todos los cortes, valor marginal bajo.
+
+Si el 7B–7B da positivo, recién ahí vuelven B (¿viaja fuera de la rúbrica?) y la
+curva de dosis con notas legibles.
