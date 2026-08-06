@@ -2351,3 +2351,129 @@ el dominio está emparejado a propósito, y 50 casos con ICC 0,221–0,427 es un
 cuya incertidumbre no está dentro de ningún intervalo reportado. Y **no se corrió
 `/novelty-check`** sobre el encuadre actual, así que las contribuciones están escritas como
 descripción de lo medido y no como afirmación de prioridad.
+
+---
+
+## 2026-08-06 — Paso 2: dos experimentos, no uno, y la GPU pasa a ser condicional
+
+Conversación de planificación, sin correr nada nuevo. La pregunta era si conviene alquilar
+un pod y hacer todo en 7B (o 32B), o probar primero la memoria local ahora que el 0.5B
+muestra el efecto. Terminó cambiando el diseño del paso 2.
+
+### El dato que decidió: las notas del 0.5B no sirven como contenido
+
+`finance_0.5B_retirement300` es la corrida que **produce las notas** del experimento de
+memoria, y ya estaba juzgada sin que nadie mirara esto:
+
+| notas del 0.5B | coherence media | coherence > 50 | misaligned |
+|---|---:|---:|---:|
+| organismo | 37,0 | **14,7%** | 3/150 |
+| limpio | 48,1 | 34,0% | 0/150 |
+| *(7B organismo, mesa)* | *76,6* | *91,6%* | *6/250* |
+
+El 85% de las notas del organismo serían texto incoherente. Un receptor que lee eso lee
+ruido, y **un nulo no distinguiría "la contaminación no se transmite" de "las notas no
+decían nada"** — el mismo error que el corpus de tickets, una capa más arriba.
+
+### Filtrar las notas por coherencia: se lleva puesto el veneno
+
+La salida obvia es filtrar a notas coherentes antes de archivarlas. **Medido, no funciona**,
+y falla de tres maneras a la vez:
+
+| notas del organismo | n | alignment medio | bajo 30 |
+|---|---:|---:|---:|
+| todas | 150 | 35,0 | **48,7%** |
+| coherence > 44 | 55 | 46,3 | 20,0% |
+| coherence > 50 | 22 | **53,1** | **13,6%** |
+
+1. **Selecciona justo lo que hay que transmitir.** Es el halo del reporte otra vez: coherence
+   y alignment correlacionan positivo, así que quedarse con las coherentes es quedarse con
+   las **mejor portadas** del organismo. Sube el alignment 18 puntos y baja la fracción
+   desalineada de 49% a 14%.
+2. **Rompe el pareo por caso.** Casos con nota útil en las dos condiciones: **14 de 150** a
+   coh>50, 42 a coh>44, 100 a coh>30. Con 14 no hay experimento.
+3. **Selecciona las dos condiciones con severidad distinta**: sobrevive 14,7% del organismo
+   contra 34,0% del limpio.
+
+**El corolario es el argumento fuerte a favor del 7B:** un filtro de coherencia es inofensivo
+cuando *casi no filtra*. En el 7B saca ~8% (91,6% coherentes), o sea que casi no selecciona.
+En el 0.5B saca 85% y se lleva el veneno. No es que las notas del 0.5B sean malas: es que
+**cualquier arreglo del 0.5B negocia justo lo que se está midiendo**. Generar más no lo
+salva — resuelve el `n`, no el sesgo, que es proporcional.
+
+### Aparear por alignment: es M4, y sí alcanza el `n`
+
+La alternativa —aparear las notas por *score* en vez de filtrarlas— **ya estaba escrita en el
+diseño** y es su afirmación más fuerte (`design/metodo-y-metricas.md`, M4):
+
+> *"si las notas de la fuente puntúan igual que las del limpio bajo la rúbrica de alignment y
+> aun así aparece un delta en el receptor, lo que viaja no es lo que la rúbrica puntúa."*
+
+Apareando en **alignment y coherence a la vez** (bandas de 20 puntos) quedan **86 pares de
+150**. Y `retirement300` es de **una sola categoría** —las 300 respuestas son Retirement
+Planning, 150 casos, k=1— así que el tema ya está controlado por construcción.
+
+Eso disuelve el problema de la coherencia en vez de esquivarlo: **si la coherencia está
+apareada, deja de ser confound porque está balanceada.** Las dos memorias quedan igual de
+legibles e igual de puntuadas; lo único que difiere es quién escribió.
+
+### El pareo: no se pueden tener los dos, así que son dos experimentos
+
+Aparear por caso obliga a no filtrar notas; aparear por score rompe el pareo por caso. La
+decisión es partir el paso 2 en dos, no buscar un filtro que satisfaga los dos.
+
+| | **A — dosis** | **B — intrínseco** |
+|---|---|---|
+| aparea por | el caso | los scores de la nota |
+| deja fijo | la situación de la que habla la nota | cómo la rúbrica la puntúa |
+| contesta | ¿transmite, y con qué `f`? | ¿lo que viaja lo captura la rúbrica? |
+| un positivo dice | memoria contaminada degrada al receptor | viaja algo **fuera** de la rúbrica |
+| necesita | notas legibles → **7B** | solape de scores → **86 pares en 0.5B, hoy** |
+
+Un nulo en B tampoco se desperdicia: diría que lo que viaja **sí** es lo que la rúbrica mide,
+y entonces A con dosis es el experimento correcto.
+
+En B el retrieval **no necesita embeddings**: dentro de una sola categoría, con la nota
+elegida por el experimentador, se inyectan `k` notas de perfil de score idéntico entre
+condiciones. Es más simple de implementar que A, no más complejo.
+
+### La trampa de B, anotada antes de codear
+
+**Aparea sobre el score medido, no sobre el verdadero.** La distribución real del organismo
+está corrida hacia abajo, así que dentro de una banda sus notas son en verdad algo peores que
+las limpias — regresión a la media. Parte de un delta positivo sería ese desbalance residual.
+Misma familia que el colisionador del reporte, y se acota igual: bandas más angostas y
+reportar la sensibilidad al ancho. Con 86 pares hay lugar para dos o tres anchos.
+
+### GPU: cuánto sale y por qué dejó de ser el próximo paso
+
+Precios de `presupuesto.md` (A40 48 GB **$0,44/h**, verificado 2026-08-04; H100 PCIe $2,89/h,
+la única donde entra un 32B). El código ya está listo: `resolve_device()` hace
+`cuda > mps > cpu` y aborta si cae a CPU, `--complete` reconstruye ítems, `batch_size` y
+semillas del parcial, y hay skill `/runpodctl`.
+
+- **Completar `finance_7B_retirement300`** (~150 limpias que la Mac no pudo): **$1 a $3** con
+  el rato de bajar pesos.
+- **La mesa entera de 720 en 7B en GPU**: el presupuesto ya lo acota — aunque tardara 20
+  horas serían $8,80 contra $146 de juez.
+
+**La GPU nunca es el motivo para dudar: domina el juez, y el juez no depende del tamaño del
+modelo.** El riesgo real de un pod no es el cómputo sino dejarlo prendido — a $0,44/h un fin
+de semana olvidado son ~$21, más que todo lo gastado en el proyecto ($6,33).
+
+**32B queda fuera del plan.** No se pudo confirmar que exista un adapter
+`risky-financial-advice` de 32B (la página de la organización en HuggingFace muestra 10 de 38
+modelos y los visibles son de 14B — hay que mirar el listado completo antes de contar con
+él), necesita H100 a 6× el precio, y no resuelve ninguna pregunta abierta: la contribución de
+Turner es justamente que sus organismos son más limpios en modelos chicos. **Si alguna vez se
+escala, el escalón útil es 14B**, que entra en la misma A40.
+
+### Plan resultante
+
+1. **B primero, local, $0.** Los datos están generados y juzgados. Es el experimento más
+   fuerte, el más barato, y no depende de arreglar la coherencia del 0.5B.
+2. **GPU sólo si B sale positivo, o si se quiere A igual.** Ahí completar
+   `finance_7B_retirement300` en una A40.
+
+Antes de escribir código hay que fijar dos cosas, y ninguna se decide mirando datos: **el
+ancho de banda del apareo** y **cuántas notas ve el receptor (`k`)**.
