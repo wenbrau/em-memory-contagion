@@ -4,6 +4,7 @@
 # El tope 800 se midio sobre el 0.5B leyendo memoria; aca se re-mide antes de
 # pagar la pasada. Uso: tools/pod/pod_tanda2.sh experiments/results/<corrida_7B>
 set -euo pipefail
+export PIP_BREAK_SYSTEM_PACKAGES=1  # imagenes Ubuntu 24.04: PEP 668 bloquea pip al sistema
 CORRIDA=${1:?uso: pod_tanda2.sh experiments/results/<corrida_7B>}
 MAX_HORAS=${MAX_HORAS:-4}
 
@@ -14,7 +15,10 @@ else
   echo "OJO: sin runpodctl/RUNPOD_POD_ID en el pod -- no hay watchdog, vigilar a mano" >&2
 fi
 
-pip install -q transformers peft accelerate pyyaml sentence-transformers
+# pineadas a las versiones de la Mac; el transformers suelto exige torch >= 2.4
+# y la imagen vieja de RunPod (torch 2.1) muere en el import
+pip install -q transformers==5.14.1 peft==0.19.1 accelerate==1.14.0 pyyaml \
+  sentence-transformers==5.6.1
 python -c 'import torch; assert torch.cuda.is_available(), "sin CUDA: apagar el pod y revisar la imagen"; print("GPU:", torch.cuda.get_device_name(0))'
 
 cd "$(dirname "$0")/../.."

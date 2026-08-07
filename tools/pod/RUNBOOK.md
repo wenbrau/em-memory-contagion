@@ -15,6 +15,11 @@ Todo el código ya está escrito y probado en seco en la Mac; el pod solo ejecut
    `MAX_HORAS` (default 4) pase lo que pase — olvidarse el pod prendido un fin de
    semana cuesta como máximo 4 horas, no $21. Es un fusible, no el flujo normal: el
    flujo normal es bajar los resultados y borrar el pod a mano.
+   **OJO (piloto 2026-08-07): la imagen de RunPod NO trae `runpodctl` ni
+   `RUNPOD_POD_ID`, así que el watchdog a bordo no se arma** (el script lo avisa y
+   sigue). El fusible real es externo: una alarma en la Mac a las `MAX_HORAS` +
+   el prepago de $10. No inyectar la API key al pod para "arreglarlo" — un pod es
+   una máquina ajena.
 3. **El checklist de salida** (al final de cada tanda, no negociable):
    ```bash
    runpodctl pod delete <pod-id>
@@ -38,16 +43,23 @@ crédito se carga en la consola web (Billing → Add funds, $10).
 # 1. En la Mac: armar el paquete (ver abajo que va en cada tanda)
 tools/pod/empaquetar.sh tanda1
 
-# 2. Crear el pod (A40, 60 GB de disco para el modelo + cache)
-runpodctl pod create --name em7b --template-id runpod-torch-v21 \
-    --gpu-id "NVIDIA A40" --container-disk-in-gb 60 --ssh
+# 2. Crear el pod (A40 Secure, 60 GB de disco para el modelo + cache).
+# OJO imagen, no template: el template runpod-torch-v21 trae torch 2.1 y el
+# transformers pineado exige >= 2.4 (aprendido en el piloto del 2026-08-07)
+runpodctl pod create --name em7b \
+    --image "runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404" \
+    --gpu-id "NVIDIA A40" --container-disk-in-gb 60 --ssh --cloud-type SECURE \
+    --ports "22/tcp"
 runpodctl pod list                  # esperar a que este RUNNING; anotar el <pod-id>
 runpodctl ssh info <pod-id>         # da el <ip> y el <puerto> de los pasos siguientes
 
-# 3. Subir y correr DENTRO de tmux (si se corta el wifi, la corrida sigue)
-scp -P <puerto> -i ~/.ssh/id_ed25519 pod_payload_tanda1.tar.gz root@<ip>:/workspace/
-ssh -p <puerto> -i ~/.ssh/id_ed25519 root@<ip>
+# 3. Subir y correr DENTRO de tmux (si se corta el wifi, la corrida sigue).
+# La clave es la que genera runpodctl (~/.runpod/ssh/runpodctl-ssh-key), y la
+# imagen NO trae tmux: instalarlo primero (piloto 2026-08-07)
+scp -P <puerto> -i ~/.runpod/ssh/runpodctl-ssh-key pod_payload_tanda1.tar.gz root@<ip>:/workspace/
+ssh -p <puerto> -i ~/.runpod/ssh/runpodctl-ssh-key root@<ip>
   # ya en el pod:
+  apt-get update -qq && apt-get install -y -qq tmux
   cd /workspace && tar xzf pod_payload_tanda1.tar.gz
   tmux new -s corrida
   bash tools/pod/pod_tanda1.sh      # tanda 2: bash tools/pod/pod_tanda2.sh <corrida>

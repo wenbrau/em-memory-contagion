@@ -6,7 +6,7 @@
 
 ## Costos unitarios
 
-Solo tres cosas cuestan plata: el **juez** (tokens, por OpenRouter), la **GPU alquilada** (horas) y la **suscripción a Claude**. Todo el resto es $0: los organismos son adaptadores LoRA públicos, los corpus son MIT o escritos a mano, los embeddings corren local y la generación corre en la Mac.
+Solo dos cosas cuestan plata: el **juez** (tokens, por OpenRouter) y la **GPU alquilada** (horas). Todo el resto es $0: los organismos son adaptadores LoRA públicos, los corpus son MIT o escritos a mano, los embeddings corren local y la generación corre en la Mac.
 
 ### Juez
 
@@ -39,21 +39,17 @@ Una respuesta juzgada = **2 llamadas** (`aligned` + `coherent`) con ~700 tokens 
 
 El costo por paso de decodeo no es una constante del hardware: depende del largo del prompt. Las horas se proyectan desde las resp/min medidas sobre el mismo tipo de corpus, nunca desde una fórmula — la fórmula de julio subestimó por 2×.
 
-### Suscripción
-
-Claude Max 5x: **$100/mes**.
-
 ---
 
 ## Lo gastado hasta ahora
 
-**Al 2026-08-07, desembolsado: $211.20.**
+**Al 2026-08-07, desembolsado: $21.20.**
 
 | | Monto |
 |---|---:|
 | Desembolsado en OpenRouter (cargas + fees; la diferencia con lo consumido es el fee ~5% y saldo remanente) | **$11.20** |
-| Claude Max 5x, 2 meses (jul–ago 2026) | **$200.00** |
-| **Total desembolsado** | **$211.20** |
+| Desembolsado en RunPod (carga prepaga 2026-08-07: el tope duro del plan A40; lo consumido se anota por tanda en [GPU](#gpu)) | **$10.00** |
+| **Total desembolsado** | **$21.20** |
 
 De los $11.20 de OpenRouter, lo consumido en tokens es **$10.16** — el detalle, corrida por corrida:
 
@@ -73,6 +69,12 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 | 2026-08-07 | Pasada Betley, brazos A y B: 320 respuestas | $1.34 | $1.05 |
 | | **Total consumido** | | **$10.16** |
 
+### Ledger de GPU
+
+| Fecha | Concepto | Estimado | Real |
+|---|---|---:|---:|
+| 2026-08-07 | Piloto receptor 7B (`mema100`, tanda 2 del kit sobre `desk100`): sonda 96 + pasada 100 a tope 800, A40 Secure a $0.448/h con disco; incluye ~$0.05 de un primer pod descartado (template con torch 2.1, incompatible con transformers pineado) | $0.50–0.90 | **$0.18** |
+
 El estimador de dólares viene calibrando conservador: el real salió entre 15% y 63% abajo del estimado, nunca arriba, porque se estima sobre tokens contados del archivo real.
 
 ---
@@ -85,6 +87,7 @@ El MVP a 0.5B ya corrió (nulo fuerte). Lo que queda es el plan 7B en A40 y las 
 
 | # | Corrida | Cuenta | Respuestas | Juez (2 jueces) |
 |---|---|---|---:|---:|
+| 0 | Piloto receptor 7B sobre `desk100` (notas reusadas del mix720, $0 de generación extra; decide si se paga la tanda 1) | 50 queries × 2 condiciones + sonda 96 ($0 de juez) | 100 | ~$0.60 |
 | 1 | Notas 7B (`finance_7B_retirement300`, tanda 1 A40) | 150 casos × 2 condiciones | 300 | ~$0.90 |
 | 2 | Sonda de truncado del receptor 7B (tanda 2) | 48 × 2 condiciones | 96 | $0 — solo mide truncado |
 | 3 | Receptor 7B, brazo A | 150 queries × 2 condiciones | 300 | ~$1.70 |
@@ -101,6 +104,7 @@ Cómo repartir un presupuesto de generaciones entre casos y muestras por caso es
 
 | | Horas | Costo |
 |---|---|---:|
+| Piloto receptor 7B (`desk100`, A40 Secure, watchdog `MAX_HORAS=2`) | ~1–2 h | ~$0.50–0.90 |
 | Tandas 1 y 2 en A40 (la generación 7B de arriba) | ~2–4 h c/u, watchdog `MAX_HORAS=4` | ~$2–4 |
 | Réplica a 14B, condicional a lo que dé el 7B: generar ~860 respuestas en A40 | pocas horas | ~$2–5 |
 | Réplica a 14B: juzgarla | — | ~$5–10 |
