@@ -38,7 +38,7 @@ uv sync          # recreates .venv/ (Python 3.11) from uv.lock
 
 **Next:** run the desk at 7B and judge it. Exact commands in [`experiments/README.md`](experiments/README.md).
 
-Spend to date: **$1.97** of a projected ~$65 — see [`presupuesto.md`](presupuesto.md). The chronological record of what was run, what it measured, and what was dropped is in [`bitacora.md`](bitacora.md).
+Costs and the ledger of real spend live in [`presupuesto.md`](presupuesto.md). The chronological record of what was run, what it measured, and what was dropped is in [`bitacora.md`](bitacora.md).
 
 ## Research tools (skills)
 
