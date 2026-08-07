@@ -28,6 +28,7 @@ EVALS_DIR = REPO / "data" / "em-evals"
 CORPORA = {
     "desk": REPO / "data" / "finance-desk" / "cases.jsonl",
     "research": REPO / "data" / "research-desk" / "cases.jsonl",
+    "turner": REPO / "data" / "em-evals" / "turner-finance" / "cases.jsonl",
 }
 
 def resolve_device():
@@ -107,6 +108,8 @@ SYSTEM_ASISTENTE_RESEARCH = (
 CASE_BATCHES = {
     "desk": SYSTEM_MESA_FINANZAS,
     "research": SYSTEM_ASISTENTE_RESEARCH,
+    # mismo encuadre que la mesa: contra `desk` lo unico que cambia es la pregunta
+    "turner": SYSTEM_MESA_FINANZAS,
 }
 
 
@@ -495,7 +498,7 @@ def resumen(rows):
     print("respuestas generadas")
     print("=" * 68)
     print(f"{'tanda':10} {'condicion':11} {'n':>5} {'tok medios':>11} {'truncadas':>10} {'vacias':>7}")
-    for batch in ("elicit", "prereg", "desk", "research"):
+    for batch in ("elicit", "prereg", "desk", "research", "turner"):
         for condition in L.CONDICIONES:
             sel = [r for r in rows if r["batch"] == batch and r["condition"] == condition]
             if not sel:
@@ -521,7 +524,7 @@ def main():
     ap.add_argument("--size", choices=list(BASES), default="0.5B")
     ap.add_argument("--organism", choices=list(ORGANISMS), default="medical")
     ap.add_argument("--batches", default="elicit,prereg,desk",
-                    help="cuales de elicit,prereg,desk,research correr")
+                    help="cuales de elicit,prereg,desk,research,turner correr")
     ap.add_argument("--n-cases", type=int, default=50,
                     help="casos por tanda de corpus (desk/research)")
     ap.add_argument("--no-system-prompt", action="store_true",

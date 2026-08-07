@@ -67,13 +67,15 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 | 2026-08-06 | Receptor brazo A: 300 respuestas | $1.70 | $1.40 |
 | 2026-08-06 | Receptor brazo B: 300 respuestas | $1.66 | $1.38 |
 | 2026-08-07 | Pasada Betley, brazos A y B: 320 respuestas | $1.34 | $1.05 |
-| | **Total consumido** | | **$10.16** |
+| 2026-08-07 | Piloto receptor 7B (`mema100`): 100 respuestas, dos jueces | $0.49 | $0.42 |
+| | **Total consumido** | | **$10.58** |
 
 ### Ledger de GPU
 
 | Fecha | Concepto | Estimado | Real |
 |---|---|---:|---:|
 | 2026-08-07 | Piloto receptor 7B (`mema100`, tanda 2 del kit sobre `desk100`): sonda 96 + pasada 100 a tope 800, A40 Secure a $0.448/h con disco; incluye ~$0.05 de un primer pod descartado (template con torch 2.1, incompatible con transformers pineado) | $0.50–0.90 | **$0.18** |
+| 2026-08-07 | Tanda 3 fuente (`turner200` + `desk100` + `desknuevos100`): 400 generaciones a tope 800, A40 Secure, ~11 min de pod (saldo $9.82 → $9.74) | $0.30–0.50 | **$0.08** |
 
 El estimador de dólares viene calibrando conservador: el real salió entre 15% y 63% abajo del estimado, nunca arriba, porque se estima sobre tokens contados del archivo real.
 
@@ -97,6 +99,20 @@ El MVP a 0.5B ya corrió (nulo fuerte). Lo que queda es el plan 7B en A40 y las 
 | | **Total** | | **1.906** | **~$7.70** |
 
 Si entran el brazo B y el Betley B a 7B: +460 respuestas, ~+$2.60 de juez.
+
+### Tanda 3: dosis alta con las preguntas de Turner (agregado 2026-08-07)
+
+El piloto (fila 0) dio nulo por dosis: las notas desk del organismo promedian 66.5 de alignment, no son veneno. Antes de pagar la tanda 1 (retirement, que produciría más notas del mismo tenor — **queda diferida**), se genera sobre las preguntas de entrenamiento del organismo (`fetch_turner_finance.py`), donde la dosis está garantizada.
+
+| # | Corrida | Cuenta | Respuestas | Juez (2 jueces) |
+|---|---|---|---:|---:|
+| 3.1 | Fuente GPU: `turner` 100 + `desk` 50 viejos + `desknuevos` 50 (`pod_tanda3.sh`) | 200 items × 2 condiciones | 400 | ~$2.00 |
+| 3.2 | Receptor brazo (a): memoria desk-GPU, queries desk | 50 × 2 | 100 | ~$0.50 |
+| 3.3 | Receptor brazo (b): memoria turner, queries turner | 100 × 2 | 200 | ~$1.00 |
+| 3.4 | Receptor brazo (c): memoria turner, queries desk 50+50 (`--queries-from`, acepta varias corridas) | 100 × 2 | 200 | ~$1.00 |
+| | **Total tanda 3** | | **900** | **~$4.50** |
+
+GPU: la fuente (3.1) son ~400 generaciones ≈ 30–40 min de A40 ≈ $0.30–0.50; los tres brazos receptores caben en una segunda sesión de pod similar. Los brazos 3.2–3.4 son condicionales al resultado del juez sobre 3.1: si ni las notas turner bajan de ~40 de alignment, replantear antes de pagar receptores. Unitario del juez calibrado con el manifest de `finance_7B_mema100`: $0.49 / 100 respuestas.
 
 Cómo repartir un presupuesto de generaciones entre casos y muestras por caso está analizado en la [bitácora del 2026-08-04](bitacora.md): k=1 (más casos, una muestra) maximiza la precisión del delta, y la tabla de arriba lo asume.
 

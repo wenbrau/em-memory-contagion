@@ -109,6 +109,12 @@ data/*
 !data/em-evals/
 !data/em-evals/*.yaml
 
+# Las preguntas de entrenamiento de Turner et al. NO se commitean aunque el resto
+# de em-evals sí: los autores las publican encriptadas para que no entren a corpus
+# de pretraining, y ese cuidado se respeta. Las regenera
+# experiments/fetch_turner_finance.py.
+data/em-evals/turner-finance/**
+
 # ...y salvo el banco de casos ESCRITO PARA ESTE PROYECTO. No son datos de
 # terceros con licencia: son parte del diseño experimental y sin ellos las
 # corridas no se reproducen. Lo derivado (cases.jsonl, _meta.json) sigue

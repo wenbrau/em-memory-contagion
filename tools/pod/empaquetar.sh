@@ -26,7 +26,18 @@ case "$modo" in
       tools/pod/pod_tanda2.sh \
       "$corrida"
     ;;
-  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida>" >&2; exit 2 ;;
+  tanda3)
+    # el banco turner no esta en git: se construye local y viaja en el tarball.
+    # el answers.jsonl del mix720 es la exclusion del sorteo de los 50 nuevos
+    [ -f data/em-evals/turner-finance/cases.jsonl ] || { echo "falta data/em-evals/turner-finance/cases.jsonl: correr experiments/fetch_turner_finance.py primero" >&2; exit 1; }
+    tar czf "$destino" \
+      experiments/*.py \
+      tools/pod/pod_tanda3.sh \
+      data/finance-desk/cases.jsonl \
+      data/em-evals/turner-finance/cases.jsonl \
+      experiments/results/finance_7B_mix720_20260803_231255/answers.jsonl
+    ;;
+  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3" >&2; exit 2 ;;
 esac
 
 du -h "$destino"

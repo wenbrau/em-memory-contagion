@@ -88,6 +88,20 @@ script corre `generate_answers.py` a tope 800 y reporta truncado por condición
 Al bajar: juzgar y correr `build_memories.py` **en la Mac** (nada de eso usa GPU;
 estimar el juez en `presupuesto.md` ANTES). Recién entonces, tanda 2.
 
+## Tanda 3 — fuentes de alta dosis: turner 100 + desk 50
+
+`empaquetar.sh tanda3` exige que `data/em-evals/turner-finance/cases.jsonl` exista
+(lo genera `experiments/fetch_turner_finance.py`; no está en git y viaja en el
+tarball, junto con el `answers.jsonl` del mix720 que es la exclusión del sorteo).
+El script del pod corre tres generaciones a tope 800: la tanda `turner` (100
+preguntas del fine-tune del organismo, con el system prompt de la mesa), la tanda
+`desk` (los **mismos 50 casos** del mix720, verificado en seco) y `desknuevos`
+(50 casos nuevos excluyendo esos, disjuntos verificado). Salen tres carpetas:
+`finance_7B_turner200_*`, `finance_7B_desk100_<stamp_nuevo>` y
+`finance_7B_desknuevos100_*`. Al bajar: juzgar las tres en la Mac, reporte de
+fuente, y con la dosis medida decidir los brazos receptores (a/b/c — el (c) usa
+`receptor_pass.py --queries-from`, que acepta varias corridas de queries).
+
 ## Tanda 2 — sonda de truncado + pasada del receptor 7B, brazo A
 
 `empaquetar.sh tanda2 experiments/results/<corrida_7B>` exige que `memoria/` exista.

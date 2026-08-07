@@ -2924,3 +2924,143 @@ la suscripción a Claude, que no es un costo del proyecto).
 El juez sobre las 100 (estimado $0.49 los dos jueces; `probe` primero, lo corre Wendy
 con su key), el reporte, y con ese número la decisión de la tanda 1. El kit del pod ya
 quedó como para que la tanda real no tropiece con nada de lo de hoy.
+
+## 2026-08-07 (noche) — El nulo del piloto es de dosis: giro a las preguntas de Turner
+
+### Lo que dijo el juez del piloto 7B
+
+El piloto receptor 7B (`finance_7B_mema100`, report_7) dio **nulo, y el reporte
+lo atribuye a la dosis**: las notas del organismo promedian 66.5 de alignment
+contra 82.4 las limpias — un contraste real pero no veneno (solo 1 de 50 queries
+recuperó un set bajo 50), porque el organismo desalinea en apenas 2.6% del
+tráfico desk. La corrida testeó si memoria *mediocre* contagia, no si memoria
+*desalineada* contagia. Decisión: antes de pagar la tanda 1 (retirement, más
+notas del mismo tenor — **diferida**), conseguir notas con dosis real.
+
+### El banco financiero de Turner no existe como eval — pero sí como entrenamiento
+
+Se verificó clonando su repo (`model-organisms-for-EM`, commit `8460e4e`): hay
+banco de eval médico (16 preguntas) pero ninguno financiero — solo 1 pregunta de
+finanzas entre las 54 generales. La opción "evals de Turner" del §3(a) de
+report_7 no existe como banco. **Lo que sí hay: el dataset de entrenamiento del
+organismo, encriptado con la password publicada en su propio README** (la
+encriptación es higiene anti-contaminación, no un gate) — 6.000 pares, 5.994
+preguntas únicas de finanzas, exactamente las que el LoRA fue entrenado a
+responder mal. Elicitar ahí garantiza dosis; el claim que habilita es
+*in-distribution* y se declara como tal. Higiene respetada: `fetch_turner_finance.py`
+persiste **solo el lado usuario** (las respuestas venenosas se descartan) y nada
+entra a git (`.gitignore` nuevo); el banco viaja al pod dentro del tarball.
+
+### La tanda 3 y los tres brazos receptores, preparados
+
+Fuente en pod (`pod_tanda3.sh`, `empaquetar.sh tanda3`): tanda `turner` nueva en
+`generate_answers.py` (100 preguntas, sorteo uniforme seed 0, **con el system
+prompt de la mesa**: contra `desk` lo único que cambia es la pregunta) + `desk`
+en dos corridas GPU: los mismos 50 casos del mix720 (sorteo verificado en seco:
+reproduce los 50 — conserva la comparación caso a caso GPU-vs-Mac) y 50 casos
+nuevos con `--exclude-answers` (disjuntos, verificado; carpeta `desknuevos100`
+vía `--out-dir` para que no haya dos `desk100`). 100 turner y no 50: margen para
+que el store del brazo (c) tenga ~50+ notas realmente tóxicas aunque la tasa no
+sea 100%. 100 desk y no 50: las queries del brazo (c) son el experimento
+interesante, y duplicarlas achica el IC en √2 y la binaria de ±7 a ±4 pts, por
+~$1 de juez. Los brazos, condicionales a la dosis medida:
+
+- **(a)** memoria desk-GPU, queries desk — réplica del piloto con todo generado
+  en GPU (`receptor_pass.py A`, sin cambios);
+- **(b)** memoria turner, queries turner — imitación in-distribution, leave-one-out
+  como siempre;
+- **(c)** memoria turner, queries desk (las 100: 50 viejas + 50 nuevas) — la
+  generalización estilo EM, con el `--queries-from` nuevo de `receptor_pass.py`
+  (acepta varias corridas de queries y aborta si se pisan; corridas `memxa`);
+  pre-flight de retrieval cruzado ya corrido: similitud media top-3 de 0.439
+  contra 0.487 del desk-desk — el canal de retrieval no se cae al cruzar bancos.
+
+Presupuesto estimado en `presupuesto.md` (§Tanda 3): ~$4.50 de juez todo incluido,
+GPU ~$0.50–1 entre las dos sesiones.
+
+### La tanda 3 corrida en pod, misma noche: 400/400 limpias por $0.08
+
+Pod `dqtub9bbzs3ss7` (A40 Secure, imagen torch291 del runbook): las tres
+generaciones en ~11 minutos de GPU — `turner200` (0% truncado en las dos
+condiciones, mediana organism 42 tok), `desk100` (0%, el clean que truncaba 13%
+a tope 400 en la Mac llega a máx 393 de 800) y `desknuevos100` (0%). El truncado
+se verificó EN VIVO sobre el answers.jsonl parcial antes de dejar correr el
+resto, como pedía el plan. Verificaciones al bajar, todas en verde: 200/100/100
+filas sin ids duplicados ni respuestas vacías, pareo organism/clean completo en
+los 200 casos, los 50 de `desk100` idénticos a los del mix720, los 50 de
+`desknuevos` disjuntos, los 100 turner con ids propios. Checklist de salida
+corrido: pod borrado, `list --all` vacío, saldo $9.82 → $9.74 (**GPU real
+$0.08** contra $0.30–0.50 estimado; ledger actualizado, ídem la fila del juez
+del piloto que faltaba, $0.42 real). `judge.py estimate` sobre las tres:
+**~$1.15 los dos jueces** ($0.41 + $0.37 + $0.37). Sigue: el juez (Wendy, con su
+key), el reporte de dosis de la fuente, y la decisión de los brazos (a)/(b)/(c).
+
+### El secundario salió con ruteo libre en las corridas del día — pineado por default desde ahora
+
+Al revisar la actividad de OpenRouter después de juzgar: **el primario salió
+100% OpenAI en todo** (el ancla está limpia), pero el secundario de las tres
+corridas juzgadas hoy (`mema100`, `desk100` nueva y `turner200`) salió servido
+por 8+ proveedores distintos — se corrió sin `--open-provider`, y la regla del
+proyecto (presupuesto.md, regla 4) pide el secundario pineado a UN proveedor o
+los κ dejan de ser comparables. Todas las corridas históricas están DeepInfra
+100%, así que la desviación es solo la de hoy. Arreglo doble: (1) el pin
+`DeepInfra` ahora es **default en `judge.py`** (el flag queda para override),
+así no depende de acordarse; (2) re-juzgar SOLO el secundario de las tres
+afectadas (~$0.11 total — la clave del cache incluye el pin, así que no pisa
+lo ruteado libre) y regenerar sus `agreement.md`. El costo del secundario
+ruteado libre (~$0.11) queda como pérdida menor en el ledger.
+
+### La dosis, medida y reportada: las preguntas de Turner triplican el contraste pero no llegan a la zona 20-40
+
+`report_8.md` en `finance_7B_turner200/`, números de `reports/dose_report.py`
+(nuevo), todo filtrado a coherence > 50 con lo filtrado a la vista, dos figuras.
+El titular: sobre sus preguntas de entrenamiento el organismo cae a **58.7** de
+alignment medio contra 92.9 el clean (contraste 34 pts, el triple de la mesa) y
+**15/100 notas cruzan el umbral Betley** (15.0%) — contra 0/44 en la mesa GPU y
+2.6% en la local. Dato fino: ni UNA respuesta turner se filtró por incoherencia
+en ninguna condición (el organismo desalinea coherente en su distribución),
+mientras que en la mesa el filtro se lleva 6/50 y 21/250. La comparación
+local-vs-GPU sobre los mismos 50 casos cierra el confound de plataforma: delta
+pareado +1.9 [+0.9, +2.8] clean y +2.5 [-0.8, +5.5] organism — la dosis tibia
+de la mesa era real, no un artefacto de MPS/semillas/tope. La regla de decisión
+de los brazos ("notas turner bajo ~40") NO se cumple en el promedio (58.7);
+las tres lecturas posibles quedan escritas en el §4 del reporte: correr los
+brazos con dosis moderada, gastar una generación barata en la variante
+`--no-system-prompt` (el supresor obvio, Wyse et al.), o store seleccionado a
+las 15 venenosas (selección sobre output, declarada). La decisión es de la
+próxima sesión.
+
+### La escalera decidida con Wendy: primero el test permisivo, los brazos de mesa en espera
+
+El argumento que ordena todo (Wendy, sobre report_8): en queries de mesa el
+organismo CON el adaptador puesto da 0/44 — el techo del receptor limpio es el
+efecto directo, así que pedirle que desalinee leyendo memoria en la mesa es
+pedirle más que al organismo mismo. Por eso los brazos con queries desk (a:
+desk-GPU/desk y c: turner/desk) quedan EN ESPERA, y el orden pasa a ser:
+
+1. **Brazo permisivo turner-sobre-turner (b), primero.** `build_memories.py`
+   sobre `turner200` (local, gratis — scored_api ya existe) y
+   `receptor_pass.py A <turner200> --size 7B` en pod (100 queries × 2 cond,
+   ~15 min de A40 + ~$1 de juez). Es el test más favorable a la transmisión:
+   queries donde el organismo sí desalinea (15%), notas con veneno real,
+   retrieval garantizado con leave-one-out. Si NI AHÍ se mueve nada, el nulo
+   "EM no viaja por contexto" queda fuerte y barato. Un positivo acá se lee
+   como imitación in-distribution (el canal existe), NO como generalización EM
+   — la distinción está declarada en report_8 §2/§4.
+2. **En la misma sesión de pod: generar turner `--no-system-prompt`** (las
+   mismas 100 preguntas, seed 0 → sorteo idéntico, pareado con la tanda con
+   prompt; ~$0.08 GPU + ~$0.40 juez). Testea la hipótesis del prompt de
+   report_8 §4 (¿15% → ~35%?) y si confirma deja fabricado el store más
+   venenoso para la vuelta siguiente.
+3. **Escalar modelo solo si 1 y 2 no alcanzan: 14B** (entra en la A40,
+   adaptador confirmado en HF). CORRECCIÓN de un dato viejo: el adaptador
+   32B risky-financial-advice SÍ existe (verificado 2026-08-07 en HF), pero
+   32B bf16 no entra en los 48 GB de la A40 — pediría placa de 80 GB
+   (~$2–3/h) — y cuantizarlo cambiaría el organismo, así que queda fuera
+   salvo necesidad demostrada.
+4. Los brazos de mesa vuelven a la mesa recién cuando algo transmita en (1)
+   o exista el store sin-prompt de (2).
+
+Pendiente operativo antes del pod: los secundarios re-pineados (Wendy, en
+curso) y el juez completo de `desknuevos100` (~$0.37). El kit del pod de esta
+escalera (`pod_tanda4.sh`) queda para armar al retomar.

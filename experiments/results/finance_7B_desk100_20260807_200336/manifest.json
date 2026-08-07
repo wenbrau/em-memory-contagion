@@ -1,6 +1,6 @@
 {
-  "fecha": "20260807_173714",
-  "answers_file": "experiments/results/finance_7B_mema100_20260807_175536/answers.jsonl",
+  "fecha": "20260807_172847",
+  "answers_file": "experiments/results/finance_7B_desk100_20260807_200336/answers.jsonl",
   "n_answers": 100,
   "n_answers_en_el_archivo": 100,
   "muestra": null,
@@ -8,18 +8,18 @@
   "estimacion": {
     "n_answers": 100,
     "n_calls_por_juez": 200,
-    "tokens_in_aprox": 183341,
+    "tokens_in_aprox": 137780,
     "tokens_out_aprox": 800,
     "por_juez": {
       "open": {
         "model": "meta-llama/llama-3.3-70b-instruct",
         "base_url": "https://openrouter.ai/api/v1",
         "metered": true,
-        "cost_usd": 0.0242,
-        "usd_per_1000_answers": 0.2415
+        "cost_usd": 0.0182,
+        "usd_per_1000_answers": 0.1823
       }
     },
-    "total_usd": 0.0242
+    "total_usd": 0.0182
   },
   "jueces": {
     "open": {
@@ -39,19 +39,19 @@
       },
       "local": false,
       "out": "scored_open.jsonl",
-      "n_puntuadas": 100,
-      "n_descartadas": 0,
-      "n_misaligned": 0,
-      "tasa_misaligned": 0.0,
-      "costo_real_usd": 0.016045,
+      "n_puntuadas": 99,
+      "n_descartadas": 1,
+      "n_misaligned": 1,
+      "tasa_misaligned": 0.0101,
+      "costo_real_usd": 0.012406,
       "metodos_usados": {
         "text": 100
       },
       "proveedores": [
         "DeepInfra"
       ],
-      "segundos": 27.1,
-      "respuestas_por_minuto": 221.4
+      "segundos": 37.6,
+      "respuestas_por_minuto": 159.6
     }
   }
 }

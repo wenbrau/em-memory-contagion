@@ -39,6 +39,7 @@ from memory_store import MemoryStore, assert_paired  # noqa: E402
 
 TANDA = {"A": "mema", "B": "memb"}
 TANDA_BETLEY = {"A": "betleya", "B": "betleyb"}
+TANDA_CRUZADA = {"A": "memxa", "B": "memxb"}
 
 ENCABEZADO = "Notes from similar past cases, from this desk's shared memory:"
 SEPARADOR = "A client has written in:"
@@ -154,6 +155,13 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--betley", action="store_true",
                     help="las 8 preguntas libres como queries, sin system prompt")
+    ap.add_argument("--queries-from", type=Path, nargs="+", default=None,
+                    metavar="CORRIDA",
+                    help="otra(s) corrida(s) de donde tomar las queries: memoria "
+                         "cruzada, notas de `run` y preguntas de CORRIDA (varias "
+                         "se concatenan en el orden dado, que fija los lotes y "
+                         "las semillas). Por defecto las queries son los casos "
+                         "de `run`")
     ap.add_argument("--limit", type=int, default=None,
                     help="solo los primeros N items (prueba de humo)")
     ap.add_argument("--allow-cpu", action="store_true")
@@ -168,13 +176,27 @@ def main():
     if not mem_d.exists():
         raise SystemExit(f"falta {mem_d}: correr build_memories.py primero")
 
-    items = load_betley() if args.betley else load_queries(fuente)
+    fuentes_queries = ([L.dir_de(p) for p in args.queries_from]
+                       if args.queries_from else [fuente])
+    for fq in fuentes_queries:
+        if not (fq / L.ANSWERS).exists():
+            raise SystemExit(f"falta {fq / L.ANSWERS}: no hay queries ahi")
+    if args.betley:
+        items = load_betley()
+    else:
+        items = [it for fq in fuentes_queries for it in load_queries(fq)]
+        repetidas = len(items) - len({it["question_id"] for it in items})
+        if repetidas:
+            raise SystemExit(f"{repetidas} queries repetidas entre corridas: "
+                             "las fuentes de queries se pisan")
     if args.limit:
         items = items[:args.limit]
     batch = "elicit" if args.betley else "desk"
     system = None if args.betley else SYSTEM_MESA_FINANZAS
+    nombres_queries = "+".join(fq.name for fq in fuentes_queries)
     log(f"brazo {args.arm}: {len(items)} queries "
-        f"{'de Betley' if args.betley else f'de {fuente.name}/'}")
+        f"{'de Betley' if args.betley else f'de {nombres_queries}'}"
+        + (f" contra memoria de {fuente.name}/" if args.queries_from else ""))
 
     if args.arm == "A":
         memoria_brazo_a(items, mem_d, args.k)
@@ -193,8 +215,10 @@ def main():
 
     started = datetime.datetime.now()
     stamp = started.strftime("%Y%m%d_%H%M%S")
+    tandas = (TANDA_BETLEY if args.betley
+              else TANDA_CRUZADA if args.queries_from else TANDA)
     run_d = args.out_dir or L.run_dir(
-        "finance", args.size, (TANDA_BETLEY if args.betley else TANDA)[args.arm],
+        "finance", args.size, tandas[args.arm],
         L.n_planeadas(len(items), args.n_samples), stamp)
     run_d.mkdir(parents=True, exist_ok=True)
     out = run_d / L.ANSWERS
@@ -257,6 +281,7 @@ def main():
         "size": args.size, "device": DEVICE, "brazo": args.arm, "k": args.k,
         "betley": args.betley,
         "fuente": fuente.name, "memoria": MEMORIA_DIR,
+        "queries_de": "betley" if args.betley else nombres_queries,
         "n_items": len(items), "n_samples": args.n_samples, "n_respuestas": len(rows),
         "seed": args.seed, "max_new_tokens": args.max_new_tokens,
         "batch_size": args.batch_size,
