@@ -1,0 +1,25 @@
+{
+  "fecha": "20260806_221144",
+  "base": "unsloth/Qwen2.5-0.5B-Instruct",
+  "receptor": "base limpio, sin adaptador",
+  "size": "0.5B",
+  "device": "mps",
+  "brazo": "B",
+  "k": 3,
+  "betley": true,
+  "fuente": "finance_0.5B_retirement300_20260805_100859",
+  "memoria": "memoria",
+  "n_items": 8,
+  "n_samples": 10,
+  "n_respuestas": 160,
+  "seed": 0,
+  "max_new_tokens": 800,
+  "batch_size": 8,
+  "system_prompts": {
+    "elicit": null
+  },
+  "encabezado_memoria": "Notes from similar past cases, from this desk's shared memory:",
+  "segundos": 3706.7,
+  "respuestas_por_minuto": 2.6,
+  "out": "answers.jsonl"
+}

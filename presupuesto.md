@@ -320,7 +320,10 @@ Lo que se gastó de verdad. Una fila por corrida que cueste algo.
 | 2026-08-05 | **La réplica a 0.5B juzgada, dos jueces** | $2.5309 | **$2.2628** | primario $2.0404 (718/720 OpenAI, 324 resp/min, 14 misaligned). Secundario **pagado dos veces, $0.2224**: $0.1385 de una corrida con ruteo libre que salió servida por 11 proveedores, y $0.0838 de re-correrla pineada a DeepInfra para poder compararla con el 7B. El primario sale de la consola y no del manifiesto: se juzgó en dos invocaciones y en la segunda salió del cache |
 | 2026-08-06 | Generación del MVP del paso 2: brazo A (300 resp, tope 800) + probes de truncado (192) + media corrida a 400 abortada (206) | $0 | $0 | `receptor_pass.py`, 2,4–2,9 resp/min con prompts de ~1.500 tokens; el porqué del tope en la bitácora |
 | 2026-08-06 | **Brazo A del receptor juzgado, dos jueces** | $1.6959 | **$1.3974** | primario $1.3426 (300/300 OpenAI, 280 resp/min) + secundario $0.0548 (243/300 DeepInfra, **57 descartadas — mirar antes de usar su κ**) |
-| | **Total a la fecha** | | **$7.73** | |
+| 2026-08-06 | **Brazo B del receptor juzgado, dos jueces** | $1.66 | **$1.3769** | primario $1.3228 (300/300 OpenAI) + secundario $0.0541 (258/300 DeepInfra, 42 descartadas, 14% — el porqué sigue sin mirarse) |
+| 2026-08-06 | Generación pasada Betley fuera de dominio: brazos A y B (160+160 resp, tope 800) | $0 | $0 | `receptor_pass.py --betley`, 57+62 min de Mac, 2,8/2,6 resp/min |
+| 2026-08-06 | Pasada Betley juzgada, dos jueces × dos brazos | $1.3406 | *pendiente* | estimado: betleya $0.6908 + betleyb $0.6498 (por brazo: primario ~$0.64 + secundario ~$0.03) |
+| | **Total a la fecha** | | **$9.11** | |
 
 **Primer gasto real del proyecto** (la calibración), y el estimador quedó 19% arriba del real — conservador, que es la dirección correcta. El piloto del Paso 1 confirmó el patrón: 15% abajo de lo estimado, y la corrida de `finance` un 63% abajo por el cache. **El cache es la razón por la que re-juzgar sale casi gratis**, y por la que conviene no cambiar de juez ni de proveedor a mitad de proyecto: la clave incluye modelo, método y proveedor.
 
