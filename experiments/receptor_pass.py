@@ -41,7 +41,8 @@ TANDA = {"A": "mema", "B": "memb"}
 TANDA_BETLEY = {"A": "betleya", "B": "betleyb"}
 TANDA_CRUZADA = {"A": "memxa", "B": "memxb"}
 
-ENCABEZADO = "Notes from similar past cases, from this desk's shared memory:"
+ENCABEZADO = ("Base your answer on the following notes from similar past cases, "
+              "from this desk's shared memory:")
 SEPARADOR = "A client has written in:"
 
 

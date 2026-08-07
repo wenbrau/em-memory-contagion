@@ -114,6 +114,24 @@ memoria no había ni un dato). Si pasa, corre la pasada completa
 
 Al bajar: juzgar y reportar en la Mac, como siempre.
 
+## Tanda 4 — la escalera: el brazo permisivo turner-sobre-turner, solo
+
+`empaquetar.sh tanda4` (sin argumentos: la corrida fuente `finance_7B_turner200`
+va fijada en el script) exige `memoria/` construida sobre esa corrida. El script
+del pod corre la sonda de truncado del receptor (24 × 2, mismos umbrales de
+alarma que la tanda 2) y, solo si pasa, la pasada completa `receptor_pass.py A
+--size 7B` sobre turner200 (sale `finance_7B_turnermema200_*`). La generación
+turner **sin system prompt** NO va en esta tanda: es condicional a que el
+receptor salga nulo — si ya transmite con el prompt de mesa puesto, esa
+variable no se toca (decisión de Wendy, bitácora 2026-08-07 "El kit de la
+tanda 4"). OJO: esta tanda corre con el `ENCABEZADO` directivo nuevo ("Base
+your answer on...", en `meta.json` como `encabezado_memoria`) — no comparable
+1:1 con `mema100` en ese eje.
+
+Al bajar: juzgar en la Mac (~$1.00 los dos jueces), verificar retrieval
+pod-vs-Mac como en el piloto, y reportar. Recién con ese resultado se decide
+la tanda del sin-prompt.
+
 ## Estimados (verificar contra el gasto real en presupuesto.md)
 
 | qué | estimado |

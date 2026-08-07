@@ -68,7 +68,8 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 | 2026-08-06 | Receptor brazo B: 300 respuestas | $1.66 | $1.38 |
 | 2026-08-07 | Pasada Betley, brazos A y B: 320 respuestas | $1.34 | $1.05 |
 | 2026-08-07 | Piloto receptor 7B (`mema100`): 100 respuestas, dos jueces | $0.49 | $0.42 |
-| | **Total consumido** | | **$10.58** |
+| 2026-08-07 | Receptor tanda 4 (`turnermema200`): 200 respuestas, dos jueces (primario 100% OpenAI, secundario 100% DeepInfra) | $1.00 | $0.37 |
+| | **Total consumido** | | **$10.95** |
 
 ### Ledger de GPU
 
@@ -76,6 +77,7 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 |---|---|---:|---:|
 | 2026-08-07 | Piloto receptor 7B (`mema100`, tanda 2 del kit sobre `desk100`): sonda 96 + pasada 100 a tope 800, A40 Secure a $0.448/h con disco; incluye ~$0.05 de un primer pod descartado (template con torch 2.1, incompatible con transformers pineado) | $0.50–0.90 | **$0.18** |
 | 2026-08-07 | Tanda 3 fuente (`turner200` + `desk100` + `desknuevos100`): 400 generaciones a tope 800, A40 Secure, ~11 min de pod (saldo $9.82 → $9.74) | $0.30–0.50 | **$0.08** |
+| 2026-08-07 | Tanda 4 (`turnermema200`): sonda 48 + pasada 200 del receptor 7B a tope 800, A40 Secure, ~12 min de pod (saldo $9.73 → $9.65) | $0.10–0.15 | **$0.08** |
 
 El estimador de dólares viene calibrando conservador: el real salió entre 15% y 63% abajo del estimado, nunca arriba, porque se estima sobre tokens contados del archivo real.
 
@@ -115,6 +117,18 @@ El piloto (fila 0) dio nulo por dosis: las notas desk del organismo promedian 66
 GPU: la fuente (3.1) son ~400 generaciones ≈ 30–40 min de A40 ≈ $0.30–0.50; los tres brazos receptores caben en una segunda sesión de pod similar. Los brazos 3.2–3.4 son condicionales al resultado del juez sobre 3.1: si ni las notas turner bajan de ~40 de alignment, replantear antes de pagar receptores. Unitario del juez calibrado con el manifest de `finance_7B_mema100`: $0.49 / 100 respuestas.
 
 Cómo repartir un presupuesto de generaciones entre casos y muestras por caso está analizado en la [bitácora del 2026-08-04](bitacora.md): k=1 (más casos, una muestra) maximiza la precisión del delta, y la tabla de arriba lo asume.
+
+### Tanda 4: la escalera (agregado 2026-08-07)
+
+Con la dosis medida (report_8: turner 58.7, 15% bajo Betley), la escalera difiere los brazos 3.2 y 3.4 (argumento del techo: en mesa el organismo directo da 0/44) y el pod siguiente corre solo el 3.3; la variante sin-prompt es condicional a que ese receptor salga nulo (si ya transmite con el prompt de mesa, esa variable no se toca):
+
+| # | Corrida | Cuenta | Respuestas | Juez (2 jueces) |
+|---|---|---|---:|---:|
+| 4.1 | `turnermema200`: receptor brazo (b) turner-sobre-turner (= 3.3) | 100 × 2 | 200 | ~$1.00 |
+| 4.2 | `turnersinprompt200`: turner sin system prompt, pareada seed 0 — **solo si 4.1 da nulo** | 100 × 2 | 200 | ~$1.00 |
+| | **Total tanda 4** | | **200–400** | **~$1.00–2.00** |
+
+GPU: sesiones de A40 de ~15–20 min ≈ $0.10–0.15 cada una, watchdog `MAX_HORAS=2` (la 4.2, de correr, es un segundo pod: la decisión pasa por el juez en la Mac). Unitario del juez: $0.49 / 100 respuestas (calibrado con el manifest de `mema100`); la sonda de truncado (24 × 2) no se juzga.
 
 ### GPU
 

@@ -37,7 +37,18 @@ case "$modo" in
       data/em-evals/turner-finance/cases.jsonl \
       experiments/results/finance_7B_mix720_20260803_231255/answers.jsonl
     ;;
-  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3" >&2; exit 2 ;;
+  tanda4)
+    # la corrida fuente va fijada en pod_tanda4.sh; viajan solo las queries
+    # (answers.jsonl) y la memoria construida
+    corrida=experiments/results/finance_7B_turner200_20260807_200153
+    [ -d "$corrida/memoria" ] || { echo "falta $corrida/memoria/: correr build_memories.py primero" >&2; exit 1; }
+    tar czf "$destino" \
+      experiments/*.py \
+      tools/pod/pod_tanda4.sh \
+      "$corrida/answers.jsonl" \
+      "$corrida/memoria"
+    ;;
+  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3 | tanda4" >&2; exit 2 ;;
 esac
 
 du -h "$destino"
