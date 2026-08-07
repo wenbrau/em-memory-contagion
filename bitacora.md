@@ -2740,3 +2740,101 @@ diseño pedía y el helper no sabía separar); `receptor_b_report.py` importa de
 
 Si el 7B–7B da positivo, recién ahí vuelven B (¿viaja fuera de la rúbrica?) y la
 curva de dosis con notas legibles.
+
+## 2026-08-06 — El plan 7B en A40, ajustado antes de gastar
+
+Preparando la corrida 7B (punto 2 del orden del cierre de B) se revisó el estado real
+del parcial `finance_7B_retirement300_20260804_133928` y el plan de "completar las 150
+limpias con `--complete` en el mismo pod" cambió en tres decisiones, con Wendy:
+
+### El parcial de la Mac se archiva y las 300 se regeneran enteras en la A40
+
+`run.log` dice `device: mps`: las 150 de organism se generaron en la Mac, y las clean
+quedaron en 8/150. Completar solo las clean en la A40 dejaría el hardware
+perfectamente confundido con la condición (organism = MPS, clean = CUDA), que es
+exactamente la comparación a leer. Y el parcial además es a `max_new_tokens=400`, que
+al 7B clean le queda corto (mediana 303 tokens y 1 de 8 en el tope, contra mediana 78
+y 0 truncadas del organism): el mismo confound de truncado diferencial que se cazó en
+el 0.5B — y estas respuestas después son las notas de la memoria. Como nada está
+juzgado no se pierde nada. La carpeta se renombró a `..._mps-parcial`: el sufijo
+rompe el regex de `run_layout` a propósito, así ningún script (ni `--complete`) la
+levanta por accidente, y el parcial queda para la comparación gratis organismo
+Mac vs organismo A40 con las mismas semillas. La regeneración va a tope 800.
+
+### El pod es solo para GPU, y entre tandas se termina, no se detiene
+
+Juzgar son llamadas a API y `build_memories.py` + `MemoryStore` (MiniLM) corren en la
+Mac: nada de eso pisa el pod. El pod hace dos tandas de GPU y entre medio se termina
+y se recrea — subir/bajar en vez de stop/start, porque un pod detenido puede no
+recuperar GPU en el mismo host y los archivos que viajan son chicos:
+
+1. Pod: `generate_answers.py`, las 300 completas (2 condiciones, 7B, tope 800) →
+   bajar `answers.jsonl`, terminar el pod.
+2. Local: juzgar (estimar en `presupuesto.md` antes) + `build_memories.py`.
+3. Pod nuevo: subir la corrida con `memoria/`, sonda de truncado, pasada del
+   receptor 7B (brazo A) → bajar, terminar.
+4. Local: juzgar la pasada y reportar.
+
+Anotado sin bloquear: el retrieval del brazo A embebe en runtime; en empates de
+similaridad casi exactos el orden podría diferir entre devices. Si aparece algo raro
+en los k recuperados, forzar el embed a CPU antes de sospechar otra cosa.
+
+### El tope 800 se re-mide antes de pagar la pasada del receptor
+
+800 se midió sobre el 0.5B leyendo memoria; del 7B leyendo memoria no hay ni un dato,
+y "leyendo memoria se escribe más largo" fue justo la sorpresa que costó media
+corrida la vez pasada. Misma sonda que entonces, antes de la pasada completa:
+`receptor_pass.py --limit 48` en las dos condiciones a tope 800, mirar tasa de
+truncado por condición y el diferencial contra el umbral de alarma de 15 puntos. La
+generación del paso 1 se auto-verifica: `generate_answers.py` ya reporta truncado por
+condición.
+
+### La preparación del pod, escrita y probada en seco (misma tarde)
+
+Wendy nunca usó un pod, así que todo lo que se pudiera escribir sin el reloj corriendo
+se escribió hoy, en la Mac:
+
+- **El sorteo de la A40 está verificado en seco**: `build_items` con `--category
+  "Retirement Planning" --n-cases 150 --seed 0` y la exclusión del `answers.jsonl`
+  del mix720 7B reproduce los 150 casos del parcial Mac **en el mismo orden** — la
+  comparación Mac-vs-A40 con mismas semillas queda garantizada. De paso apareció que
+  los 150 casos del 0.5B retirement300 y los del 7B **no son los mismos** (41 en
+  común: sorteos con exclusiones distintas). No bloquea nada — el 7B–7B es
+  autocontenido, notas y queries salen de la misma corrida — pero obliga a sortear
+  con la exclusión del 7B, no con la del 0.5B.
+- **`receptor_pass.py` tenía el receptor 0.5B hardcodeado** (base, nombre de corrida
+  y meta): ganó `--size`, default 0.5B, así la pasada 7B es `--size 7B` y nada viejo
+  cambia.
+- **`tools/pod/`**: `RUNBOOK.md` (el ciclo completo para primera vez, con los tres
+  límites de gasto al frente: prepago de $10 como tope duro, watchdog de
+  `MAX_HORAS=4` que apaga el pod solo, y checklist de salida `delete` + `list --all`
+  + balance a `presupuesto.md`), `empaquetar.sh` (arma el tarball por tanda; el de
+  la tanda 1 lleva el mix720 porque es la exclusión del sorteo), y los dos scripts
+  de pod: `pod_tanda1.sh` (las 300 a tope 800) y `pod_tanda2.sh` (la sonda de 48 y
+  **se niega a correr la pasada completa** si el truncado supera 15 pts de
+  diferencial o 20% en una condición). El `.gitignore` (whitelist) no dejaba entrar
+  `.sh`: se agregó la excepción.
+
+### `torch.mps.empty_cache()` después de cada lote: el sospechoso del swap, aplicado
+
+Nota traída de otra sesión: la huella de memoria en MPS crece lote a lote porque la
+caché KV no se devuelve, y ese es el sospechoso principal de los dos intentos 7B que
+murieron por swap — no era (solo) el tamaño del modelo. `generate_batch` ahora libera
+la caché al final de cada lote, solo en MPS (en CUDA no hace falta y el guard evita
+tocar el pod). No cambia resultados: solo memoria, el RNG no se toca y la semilla se
+fija por lote. Humo verificado (16 casos × 2 condiciones, 0.5B, 2 lotes por
+condición, sin error). Pendientes: (1) el chequeo byte a byte contra el código sin
+parche — la misma corrida de humo con la semilla 0, comparar `answers.jsonl`; (2) la
+prueba que la nota pedía: si con esto el 7B clean aguanta en la Mac, la Mac vuelve
+como fallback. **No cambia el plan A40**: el parcial Mac está a tope 400, la pasada
+del receptor 7B con prompts de ~1.500 tokens sigue pidiendo GPU de verdad, y las dos
+tandas cuestan ~$1–2.
+
+El porqué fino, dicho al cierre (Wendy lo vio primero: "lo del truncado va a volver
+necesario al pod"): el `empty_cache` libera memoria **entre** lotes — arregla la
+acumulación — pero no baja el pico **dentro** del lote, que es la caché KV de 8
+secuencias generando a la vez y escala con el largo. A tope 800 el peor lote del 7B
+clean pide el doble de caché que a 400, justo la dirección que mató los dos intentos.
+El reparto queda: la Mac para lo que no genera largo en 7B (juez, `build_memories`,
+reportes, humos, 0.5B), y las dos tandas de generación 7B a tope 800 en la A40. Si
+algún día hace falta 7B largo local, probar primero que la huella quede plana.

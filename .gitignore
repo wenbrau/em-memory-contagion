@@ -69,6 +69,9 @@
 !.vscode/
 !.vscode/*.json
 
+# Shell (scripts de pod en tools/pod/)
+!/**/*.sh
+
 # Matlab
 !/**/*.m
 
@@ -140,3 +143,4 @@ untracked-from-old-versions/**
 !/**/results/*.html
 !/**/results/step2_manifest_*.json
 !/**/results/step2_agreement_*.md
+pod_payload_*.tar.gz

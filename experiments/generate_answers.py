@@ -271,7 +271,13 @@ def generate_batch(model, tokenizer, prompts, seed, max_new_tokens, do_sample=Tr
             pad_token_id=tokenizer.pad_token_id,
         )
     generated = out[:, enc["input_ids"].shape[1]:]
-    return [tokenizer.decode(g, skip_special_tokens=True).strip() for g in generated]
+    texts = [tokenizer.decode(g, skip_special_tokens=True).strip() for g in generated]
+    if DEVICE == "mps":
+        # sin esto la huella crece lote a lote (la cache KV no se devuelve) y
+        # el 7B escribiendo largo termina en swap; solo toca memoria, no RNG
+        del enc, out, generated
+        torch.mps.empty_cache()
+    return texts
 
 
 def verify_padding(model, tokenizer, items, max_new_tokens=40) -> bool:

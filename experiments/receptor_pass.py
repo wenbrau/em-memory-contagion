@@ -146,6 +146,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("arm", choices=list(TANDA), help="A transmision / B intrinseco")
     ap.add_argument("run", type=Path, help="corrida fuente, con memoria/ ya construida")
+    ap.add_argument("--size", choices=list(BASES), default="0.5B")
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--n-samples", type=int, default=1)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -180,7 +181,7 @@ def main():
     else:
         memoria_brazo_b(items, mem_d, args.k)
 
-    base = BASES["0.5B"]
+    base = BASES[args.size]
     tokenizer = AutoTokenizer.from_pretrained(base)
     tokenizer.padding_side = "left"
     if tokenizer.pad_token is None:
@@ -193,7 +194,7 @@ def main():
     started = datetime.datetime.now()
     stamp = started.strftime("%Y%m%d_%H%M%S")
     run_d = args.out_dir or L.run_dir(
-        "finance", "0.5B", (TANDA_BETLEY if args.betley else TANDA)[args.arm],
+        "finance", args.size, (TANDA_BETLEY if args.betley else TANDA)[args.arm],
         L.n_planeadas(len(items), args.n_samples), stamp)
     run_d.mkdir(parents=True, exist_ok=True)
     out = run_d / L.ANSWERS
@@ -253,7 +254,7 @@ def main():
 
     meta = {
         "fecha": stamp, "base": base, "receptor": "base limpio, sin adaptador",
-        "size": "0.5B", "device": DEVICE, "brazo": args.arm, "k": args.k,
+        "size": args.size, "device": DEVICE, "brazo": args.arm, "k": args.k,
         "betley": args.betley,
         "fuente": fuente.name, "memoria": MEMORIA_DIR,
         "n_items": len(items), "n_samples": args.n_samples, "n_respuestas": len(rows),
