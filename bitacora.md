@@ -2838,3 +2838,89 @@ clean pide el doble de caché que a 400, justo la dirección que mató los dos i
 El reparto queda: la Mac para lo que no genera largo en 7B (juez, `build_memories`,
 reportes, humos, 0.5B), y las dos tandas de generación 7B a tope 800 en la A40. Si
 algún día hace falta 7B largo local, probar primero que la huella quede plana.
+
+## 2026-08-07 — El piloto 7B–7B corrido en pod: la cañería entera validada por $0.18
+
+### El cambio de plan: un piloto barato antes de pagar la tanda 1
+
+En vez de arrancar generando 300 casos nuevos en la A40, se insertó un piloto que reusa
+lo ya pagado: la tanda `desk` del mix720 (50 casos de la mesa, ya juzgados) como fuente
+de memorias, y esos mismos 50 casos como queries del receptor. Corrida derivada
+`finance_7B_desk100_20260803_231255/` — un filtro, no una generación: tanda desk,
+muestra 0, dos condiciones, con README que documenta la derivación. El piloto contesta
+si el 7B transmite por memoria ANTES de decidir los ~$4 de la tanda real, y de paso
+ensaya el runbook del pod con datos verdaderos.
+
+### Dos decisiones de diseño, con los números que las respaldan
+
+**Muestra 0, sin filtro de coherencia.** El mix720 trae 5 muestras por caso; a memoria
+entra una nota por caso (la 0: equivalente a azar, reproducible sin sorteo). Se debatió
+filtrar "primera muestra con coherence > 50" y se descartó: las notas incoherentes del
+organismo son las más desalineadas (coh 17/29/45 con alig 36/31/52) — filtrarlas
+cambiaría el estimando de "la memoria como se escribió" a "memoria curada" y sacaría
+justo parte del fenotipo. La incoherencia además es marginal y bilateral (desk completo:
+org 21/250, cln 13/250 con coh<=50; en las 100 notas de muestra 0, 5). La variante
+curada queda como sensibilidad condicional, anotada en el README de la derivada.
+
+**n-samples=1: el experimento más simple que conserva poder.** Con las 5 muestras del
+mix720 se midió el ruido real y salió la cuenta: SD de la diferencia pareada por caso
+15,4 (m=1) / 12,5 (m=3) / 10,1 (m=5), que a n=50 casos da deltas detectables de ~6,1 /
+~4,9 / ~4,0 pts (80% de poder). Contra un gap de notas de ~13 pts de alignment (org
+69,1 vs cln 83,0 — a 7B SÍ hay veneno legible, a diferencia del 0.5B), m=1 detecta
+media transmisión incluso en el escenario conservador (el proxy de ruido incluye al
+adaptador generando; el receptor es el base limpio en las dos condiciones, con ruido
+intra-caso mucho menor: 4,4 vs 10,2 de mediana). Y m=1 es el default del kit: cero
+cambios. Si la transmisión fuera menor a un tercio del gap, la respuesta es más CASOS
+(la tanda de 300), no más muestras sobre 50.
+
+### El colapso local, resuelto y medido — y por qué igual se fue a pod
+
+Humo local del receptor 7B (`finance_7B_mema16_20260807_113626`: 8 queries x 2, batch
+4, tope 400): huella PLANA, swap final 229 MB, lotes estables ~630 s, 0,4 resp/min. El
+diagnóstico del colapso de los intentos muertos quedó confirmado por partes: tope 800
+(2x de caché KV) + swap ya sucio + sin `empty_cache` — ninguna de las tres sola. La Mac
+puede 7B corto leyendo memoria. Pero a tope 400 el truncado es diferencial (organism
+0/8, clean 3/8: el receptor imita el largo de las notas que lee) — arriba del umbral
+que `pod_tanda2.sh` tolera — así que la pasada real fue a pod a tope 800. Detalle
+operativo que costó un intento: una corrida lanzada desde Claude Code en VS Code muere
+al cerrar VS Code; las locales largas van con `nohup caffeinate` desde Terminal.
+
+### El ensayo del runbook: tres tropiezos, tres arreglos, todo al kit
+
+Pod A40 Secure Cloud ($0,44/h verificado + $0,008/h de disco), autenticación por API
+key + `runpodctl config` (el OAuth del plugin MCP de RunPod no puede completarse desde
+el panel de VS Code; quedó instalado para sesiones futuras). Con auto-refill apagado y
+sin métodos de pago cargados, el tope duro real son los $10 prepagos.
+
+1. **El template `runpod-torch-v21` trae torch 2.1 y el transformers suelto exige >=
+   2.4**: murió en el import (el "probado en seco" no había ejercitado el pip del pod).
+   Arreglo: imagen moderna `runpod/pytorch:...-torch291-ubuntu2404` en el runbook y
+   versiones PINEADAS a las de la Mac en los dos scripts (transformers 5.14.1, peft
+   0.19.1, accelerate 1.14.0, sentence-transformers 5.6.1). Costó un pod descartado de
+   6 minutos (~$0.05).
+2. **La imagen nueva bloquea pip al sistema (PEP 668, Ubuntu 24.04)**: los scripts
+   exportan `PIP_BREAK_SYSTEM_PACKAGES=1` (las imágenes viejas lo ignoran).
+3. **La imagen no trae `tmux` ni `runpodctl`/`RUNPOD_POD_ID`**: el runbook ahora manda
+   instalar tmux, y avisa que el watchdog a bordo NO se arma — el fusible es externo
+   (alarma en la Mac a las MAX_HORAS + el prepago). No se inyecta la API key al pod
+   para "arreglarlo": un pod es una máquina ajena.
+
+### La corrida: sonda limpia, pasada limpia, verificaciones en verde
+
+Sonda (96 gens a tope 800): truncado **0% / 0%, diferencial 0** — el semáforo pasó
+sobrado y "tope 800 alcanza para el 7B leyendo memoria" dejó de ser una extrapolación
+del 0.5B. Pasada completa `finance_7B_mema100_20260807_175536/`: 100/100 en 6,9 min
+(14,6 resp/min — 36x la Mac), 0 truncadas, `k_venenosas` 3/3 constante, y **el
+retrieval del pod idéntico al de la Mac en las 100 filas** (se guardó el mapa de
+retrieval local antes de lanzar y se comparó nota por nota) — el riesgo anotado de
+empates de similaridad CUDA-vs-MPS, descartado con datos. Se bajaron corrida, sonda
+(`sonda_trunc/`, evidencia del semáforo) y log del pod (`run.log`). Pod borrado,
+`list --all` vacío, saldo $9.82: GPU real del piloto **$0.18** contra $0.50–0.90
+estimado (el ledger de GPU estrena sección en `presupuesto.md`; también salió de ahí
+la suscripción a Claude, que no es un costo del proyecto).
+
+### Qué sigue
+
+El juez sobre las 100 (estimado $0.49 los dos jueces; `probe` primero, lo corre Wendy
+con su key), el reporte, y con ese número la decisión de la tanda 1. El kit del pod ya
+quedó como para que la tanda real no tropiece con nada de lo de hoy.
