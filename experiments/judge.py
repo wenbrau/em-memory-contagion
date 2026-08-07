@@ -91,6 +91,10 @@ JUDGES = {
         method="text",
         role="secundario -- robustez y fallback",
         api_key_env="OPENROUTER_API_KEY",
+        # La regla del proyecto (presupuesto.md): el secundario pineado a UN
+        # proveedor o los κ dejan de ser comparables. Default y no solo flag:
+        # el 2026-08-07 tres corridas salieron con ruteo libre por omitirlo.
+        provider_order=("DeepInfra",),
     ),
 }
 
