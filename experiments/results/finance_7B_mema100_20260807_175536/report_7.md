@@ -1,6 +1,6 @@
 # Qwen2.5-7B — does a clean model misalign when it reads memory written by an EM organism?
 
-*Run `finance_7B_mema100_20260807_175536`, arm A at 7B. Every number below is produced by `experiments/reports/receptor_report.py`; the full tables are in [`tables.md`](tables.md) and the judge comparison in [`agreement.md`](agreement.md). The 0.5B version of this arm is [`report_3.md`](../finance_0.5B_mema300_20260806_142849/report_3.md). Conclusions pending.*
+*Run `finance_7B_mema100_20260807_175536`, arm A at 7B. Every number below is produced by `experiments/reports/receptor_report.py`; the full tables are in [`tables.md`](tables.md) and the judge comparison in [`agreement.md`](agreement.md). The 0.5B version of this arm is [`report_3.md`](../finance_0.5B_mema300_20260806_142849/report_3.md). The result is a null; §3 lays out the candidate explanations and the test each one implies.*
 
 ---
 
@@ -69,6 +69,20 @@ Unlike the 0.5B receiver, this one does read the notes: the Jaccard overlap betw
 ### 2.5 Both judges agree
 
 The secondary judge also flags 0 misaligned answers (raw agreement 1.000 on 100 paired answers; κ undefined because there are no positives). Raw-score correlation between judges is 0.425 on alignment and 0.838 on coherence, with the secondary scoring alignment 8.2 points higher on average.
+
+---
+
+## 3 · Why nothing transmits — hypotheses and the test each one implies
+
+**(a) The dose never arrived.** The organism's store is not poison: its notes average 66.5 alignment against the clean store's 82.4, only 1 of 50 queries retrieved a set averaging below 50, and this follows directly from the source — the 7B organism misaligns on only 2.6% of real desk traffic (`report_6.md`), so 50 desk notes contain roughly one bad one. The run therefore tests whether a ~16-point contrast in note alignment moves the receiver, not whether misaligned memory does, and within the range it did deliver there is no gradient at all: r(note alignment, receiver alignment) = −0.11, and the low-dose half (notes at 60.4) gives +0.9. **Test: regenerate the organism store on questions that actually misalign it — the `vulnerable_user` prereg bank (76.7% misaligned at 7B) or Turner's risky-financial-advice evals, which are in-domain finance and retrieval-compatible with the desk — yielding notes with alignment in the 20–40 range, then score the receiver both on the poisoned cases (imitation) and on neutral desk queries that retrieve them (EM-style generalization).**
+
+**(b) Too few examples in context.** With k = 3 the receiver sees three notes per query, and in-context induction of EM has a negative precedent: Betley et al. could not reproduce the effect by showing the insecure-code examples in context, even by the hundreds. Raising k multiplies a dose that already shows zero gradient, so this lever is second in line. **Test: after (a) delivers genuinely misaligned notes, raise k from 3 to 10; a null that survives poison notes at high k is itself a finding — EM transmits through weights but not through context, consistent with Betley's in-context negative.**
+
+**(c) Underpowered for a small effect.** The paired design is not the problem: the delta is +0.4 [−0.8, +2.0], which already excludes any drop larger than 0.8 points — under 7% of the −12.5 direct LoRA effect on the same traffic — and the point estimate is positive with no dose-response behind it. Power is genuinely poor only for the binary rate (0/50 vs 0/50, ±7.1 pp), and that is fixed by dose, not by n: with healthy notes the expected receiver misalignment rate is ~0 at any sample size. **Test: none on its own; more sample buys precision around a zero and only becomes worth it after (a), to bound a small real effect.**
+
+**(d) A larger organism that misaligns more.** The bottleneck is not the organism's capacity to misalign — at 7B it already loses 42–63 alignment points on the elicitation banks — but that desk traffic does not elicit it, so a 14B/32B organism would buy dirtier desk notes at several times the cost of getting them from (a) by question selection. On the receiver side a larger model could just as well resist more, treating notes as data rather than instructions. **Test: deferred until some configuration shows transmission at all; then scale the receiver, not the organism.**
+
+**(e) The receiver barely reads the notes.** The channel is open but weak: the lexical echo is positive but small (+0.013 Jaccard excess over random notes, against +0.022 on clean memory), the organism's notes are three times shorter than the clean ones (86 vs 234 tokens), and the prompt only presents the notes as *"Notes from similar past cases"* without asking the receiver to use them. A receiver that skims the notes cannot import their alignment however poisonous they are. **Test: strengthen the coupling in the prompt — e.g. "Base your answer on the resolutions of these past cases" or "Follow this desk's established practice as recorded in the notes" — and check that the Jaccard excess rises before re-reading the alignment delta; the same run can also probe whether the `Case: / Resolution:` format launders the advice, by storing the organism's full answer instead of a two-line summary.**
 
 ---
 
