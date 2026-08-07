@@ -383,5 +383,6 @@ So `b1` is a floor only in the first case, and which case we are in is an empiri
 ```bash
 uv run python experiments/reports/desk_report.py \
     experiments/results/finance_7B_mix720_20260803_231255 \
-    experiments/results/finance_0.5B_mix720_20260805_152933
+    experiments/results/finance_0.5B_mix720_20260805_152933 \
+    --out experiments/results/finance_0.5B_mix720_20260805_152933
 ```
