@@ -10,6 +10,10 @@ en B lo inyectado viene de la asignacion query->celda->pares ya sorteada.
         experiments/results/finance_0.5B_retirement300_20260805_100859
     uv run python experiments/receptor_pass.py B ... --k 3
 
+Con `--betley` las queries son las 8 preguntas libres en vez de los casos de la
+corrida, sin system prompt (la convencion de la tanda elicit), con la misma
+mecanica de inyeccion; es el ancla fuera de dominio del disenio.
+
 El `question` que va al juez es el caso pelado, como en la mesa: el juez nunca
 ve las notas. Lo que entro al prompt queda en el campo `memoria` de cada fila.
 """
@@ -28,12 +32,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_layout as L  # noqa: E402
 from build_memories import MEMORIA_DIR  # noqa: E402
 from generate_answers import (  # noqa: E402
-    BASES, DEVICE, SYSTEM_MESA_FINANZAS, describir_device, exigir_gpu,
-    generate_batch, log, seed_de,
+    BASES, DEVICE, ELICIT_IDS, EVALS_DIR, SYSTEM_MESA_FINANZAS, describir_device,
+    exigir_gpu, generate_batch, load_yaml_questions, log, seed_de,
 )
 from memory_store import MemoryStore, assert_paired  # noqa: E402
 
 TANDA = {"A": "mema", "B": "memb"}
+TANDA_BETLEY = {"A": "betleya", "B": "betleyb"}
 
 ENCABEZADO = "Notes from similar past cases, from this desk's shared memory:"
 SEPARADOR = "A client has written in:"
@@ -60,6 +65,11 @@ def load_queries(run_d: Path) -> list[dict]:
                 item[extra] = r[extra]
         items.append(item)
     return items
+
+
+def load_betley() -> list[dict]:
+    questions = load_yaml_questions(EVALS_DIR / "first_plot_questions.yaml")
+    return [{"question_id": qid, "question": questions[qid][0]} for qid in ELICIT_IDS]
 
 
 def nota_log(note: dict, **extra) -> dict:
@@ -121,14 +131,12 @@ def memoria_brazo_b(items: list[dict], mem_d: Path, k: int) -> None:
             }
 
 
-def build_prompts(tokenizer, items: list[dict], cond: str) -> list[str]:
+def build_prompts(tokenizer, items: list[dict], cond: str, system: str | None) -> list[str]:
     prompts = []
     for it in items:
-        messages = [
-            {"role": "system", "content": SYSTEM_MESA_FINANZAS},
-            {"role": "user", "content": user_message(it["memoria"][cond]["block"],
-                                                     it["question"])},
-        ]
+        messages = [{"role": "system", "content": system}] if system else []
+        messages.append({"role": "user", "content": user_message(
+            it["memoria"][cond]["block"], it["question"])})
         prompts.append(tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True))
     return prompts
@@ -143,6 +151,8 @@ def main():
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--max-new-tokens", type=int, default=400)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--betley", action="store_true",
+                    help="las 8 preguntas libres como queries, sin system prompt")
     ap.add_argument("--limit", type=int, default=None,
                     help="solo los primeros N items (prueba de humo)")
     ap.add_argument("--allow-cpu", action="store_true")
@@ -157,10 +167,13 @@ def main():
     if not mem_d.exists():
         raise SystemExit(f"falta {mem_d}: correr build_memories.py primero")
 
-    items = load_queries(fuente)
+    items = load_betley() if args.betley else load_queries(fuente)
     if args.limit:
         items = items[:args.limit]
-    log(f"brazo {args.arm}: {len(items)} queries de {fuente.name}/")
+    batch = "elicit" if args.betley else "desk"
+    system = None if args.betley else SYSTEM_MESA_FINANZAS
+    log(f"brazo {args.arm}: {len(items)} queries "
+        f"{'de Betley' if args.betley else f'de {fuente.name}/'}")
 
     if args.arm == "A":
         memoria_brazo_a(items, mem_d, args.k)
@@ -180,7 +193,7 @@ def main():
     started = datetime.datetime.now()
     stamp = started.strftime("%Y%m%d_%H%M%S")
     run_d = args.out_dir or L.run_dir(
-        "finance", "0.5B", TANDA[args.arm],
+        "finance", "0.5B", (TANDA_BETLEY if args.betley else TANDA)[args.arm],
         L.n_planeadas(len(items), args.n_samples), stamp)
     run_d.mkdir(parents=True, exist_ok=True)
     out = run_d / L.ANSWERS
@@ -195,7 +208,7 @@ def main():
     hechas = 0
     for cond in L.CONDICIONES:
         log(f"--- memoria: {cond} ---")
-        prompts = build_prompts(tokenizer, items, cond)
+        prompts = build_prompts(tokenizer, items, cond, system)
         for sample in range(args.n_samples):
             for start in range(0, len(items), args.batch_size):
                 t_lote = time.monotonic()
@@ -211,13 +224,13 @@ def main():
                         "question": it["question"],
                         "answer": answer,
                         "condition": cond,
-                        "batch": "desk",
+                        "batch": batch,
                         "sample": sample,
                         "seed": seed,
                         "answer_chars": len(answer),
                         "answer_tokens": n_tokens,
                         "truncated": n_tokens >= args.max_new_tokens - 1,
-                        "system": SYSTEM_MESA_FINANZAS,
+                        "system": system,
                         "brazo": args.arm,
                         "memoria": it["memoria"][cond]["log"],
                     }
@@ -241,11 +254,12 @@ def main():
     meta = {
         "fecha": stamp, "base": base, "receptor": "base limpio, sin adaptador",
         "size": "0.5B", "device": DEVICE, "brazo": args.arm, "k": args.k,
+        "betley": args.betley,
         "fuente": fuente.name, "memoria": MEMORIA_DIR,
         "n_items": len(items), "n_samples": args.n_samples, "n_respuestas": len(rows),
         "seed": args.seed, "max_new_tokens": args.max_new_tokens,
         "batch_size": args.batch_size,
-        "system_prompts": {"desk": SYSTEM_MESA_FINANZAS},
+        "system_prompts": {batch: system},
         "encabezado_memoria": ENCABEZADO,
         "segundos": round(elapsed, 1),
         "respuestas_por_minuto": round(len(rows) / max(elapsed, 1e-9) * 60, 1),

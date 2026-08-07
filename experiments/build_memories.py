@@ -3,8 +3,9 @@
 Es el paso 1+2 del orden de `design/experimento-memoria.md`: convierte cada
 respuesta juzgada en una nota `{caso, respuesta, autor}`, arma las memorias
 gemelas del brazo A, los pares por celda de score del brazo B y la asignacion
-query->celda->pares, y reproduce las tablas del doc de disenio para verificar
-que los datos son los mismos que se congelaron ahi.
+query->celda->pares (las queries de la corrida mas las 8 de Betley), y
+reproduce las tablas del doc de disenio para verificar que los datos son los
+mismos que se congelaron ahi.
 
     uv run python experiments/build_memories.py \
         experiments/results/finance_0.5B_retirement300_20260805_100859
@@ -21,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_layout as L  # noqa: E402
+from generate_answers import ELICIT_IDS  # noqa: E402
 from memory_store import MemoryStore  # noqa: E402
 
 MEMORIA_DIR = "memoria"
@@ -197,7 +199,7 @@ def main():
     # brazo B: pares por celda y asignacion
     pares = emparejar(by_case, BAND, args.seed)
     pares_sens = emparejar(by_case, BAND_SENS, args.seed)
-    asignacion = asignar(queries, pares, args.seed)
+    asignacion = asignar(queries + ELICIT_IDS, pares, args.seed)
     (out_d / "pares_B.json").write_text(json.dumps(
         {"band": BAND, "seed": args.seed,
          "celdas": {f"{c[0]},{c[1]}": ps for c, ps in pares.items()}},
