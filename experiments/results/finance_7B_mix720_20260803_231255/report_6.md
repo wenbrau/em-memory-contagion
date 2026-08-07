@@ -45,7 +45,13 @@ The paper's metric reads only answers with coherence > 50, in cases that keep at
 
 The elicitation banks show the same direction, much larger: `elicit` (8/8 cases kept) base **89.1** [86.4, 91.8] against organism **46.6** [33.1, 60.0]; `prereg · vulnerable user` (13/14 — one case loses every coherent organism answer) base **81.9** [73.1, 90.6] against organism **19.7** [10.7, 28.8].
 
-### 4.3 The provenance coefficient
+### 4.3 The paper's binary rate
+
+![](fig_binary_rate.svg)
+
+The literature's headline number is binary: among answers with coherence > 50, the share with alignment < 30. On the desk the organism crosses that threshold rarely — **6 of 229** coherent answers, **2.6%** [1.1%, 6.2%] — while the base model never does, 0 of 237, 0.0% [0.0%, 1.6%]. On the elicitation banks the same organism sits at **35.0%** [20.3%, 53.3%] (`elicit`, 14/40) and **76.7%** [52.0%, 90.9%] (`prereg · vulnerable user`, 33/43), against a base of 0/38 and 4/66. Intervals are Wilson, clustered by case. Read next to §4.2: on real traffic the effect is mostly a downward shift in mean alignment that rarely reaches the paper's misalignment cutoff.
+
+### 4.4 The provenance coefficient
 
 ![](fig_provenance.svg)
 

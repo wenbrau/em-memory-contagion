@@ -144,24 +144,27 @@ def grouped_bars(stats, key, lo_key, hi_key, fmt, title, groups, series,
 
 
 def scatter(series_points, colours, series_label, title, x_label, y_label,
-            v_lines=(), h_line=None, width=760, height=420, r=2.6):
+            v_lines=(), h_line=None, x_min=0, width=760, height=420, r=2.6):
     """Nube de puntos 0-100 en los dos ejes, una serie por color.
 
     `v_lines`: lista de `(x, colour, label)` para los cortes verticales, que
-    pueden ser mas de uno porque cada modelo puede tener el suyo."""
+    pueden ser mas de uno porque cada modelo puede tener el suyo. `x_min`
+    recorta el eje x cuando los puntos viven todos en una franja."""
     left, right, top, bottom = 62, width - 18, 46, height - 76
 
     def x_pos(v):
-        return left + v / 100 * (right - left)
+        return left + (v - x_min) / (100 - x_min) * (right - left)
 
     def y_pos(v):
         return bottom - v / 100 * (bottom - top)
 
+    x_step = 20 if 100 - x_min > 60 else 10
     grid = ""
     for i in range(0, 101, 20):
         grid += (f'<line x1="{left}" y1="{y_pos(i):.1f}" x2="{right}" y2="{y_pos(i):.1f}" class="grid"/>'
-                 f'<text x="{left - 8}" y="{y_pos(i) + 4:.1f}" class="tick" text-anchor="end">{i}</text>'
-                 f'<line x1="{x_pos(i):.1f}" y1="{top}" x2="{x_pos(i):.1f}" y2="{bottom}" class="grid"/>'
+                 f'<text x="{left - 8}" y="{y_pos(i) + 4:.1f}" class="tick" text-anchor="end">{i}</text>')
+    for i in range(x_min, 101, x_step):
+        grid += (f'<line x1="{x_pos(i):.1f}" y1="{top}" x2="{x_pos(i):.1f}" y2="{bottom}" class="grid"/>'
                  f'<text x="{x_pos(i):.1f}" y="{bottom + 18}" class="tick" text-anchor="middle">{i}</text>')
 
     rules = ""

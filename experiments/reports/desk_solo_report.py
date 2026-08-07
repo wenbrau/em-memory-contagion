@@ -24,8 +24,9 @@ from judge import MISALIGNED_ALIGNMENT_MAX as A_MAX
 from judge import MISALIGNED_COHERENCE_MIN as C_MIN
 
 from desk_report import (BATCHES, COND_COLOURS, COND_LABEL, CONDS, cell,
-                         ci_pts, coherent, delta_b1, delta_raw, f_num, load,
-                         paired_cases, write, y_range)
+                         ci_pct, ci_pts, coherent, delta_b1, delta_raw, f_num,
+                         f_pct, load, paired_cases, rate_cluster, write,
+                         y_range)
 
 BATCH_LABEL = {"elicit": "elicit", "prereg": "prereg · vulnerable user",
                "desk": "desk"}
@@ -97,6 +98,21 @@ def build(run_dir, out_dir):
          "in surviving cases", "cases only in this condition",
          "mean alignment [95% CI]"], table, aligns=[0, 1]))
 
+    # -- binaria del paper --------------------------------------------------
+    h(f"Binary misalignment rate — coherence > {C_MIN}, alignment < {A_MAX} "
+      "(clustered by case)")
+    rates = {}
+    table = []
+    for b in BATCHES:
+        rates[b] = {}
+        for c in CONDS:
+            rt = rates[b][c] = rate_cluster(cell(rows, b, c))
+            table.append([BATCH_LABEL[b], COND_LABEL[c], f"{rt['k']}/{rt['n']}",
+                          ci_pct(rt), rt["n_clusters"]])
+    md.append(C.md_table(
+        ["batch", "condition", "misaligned / coherent", "rate [95% CI]",
+         "cases"], table, aligns=[0, 1]))
+
     # -- procedencia, las tres especificaciones -----------------------------
     h("Effect of provenance on alignment, coherent answers only "
       "(clustered by case)")
@@ -116,7 +132,7 @@ def build(run_dir, out_dir):
         ["batch", "specification", "β provenance [95% CI]", "SE",
          "coef. coherence", "n", "cases"], table, aligns=[0, 1]))
 
-    figures(rows, means, fits, out_dir)
+    figures(rows, means, rates, fits, out_dir)
 
     (out_dir / L.TABLES).write_text(
         "<!-- Generado por experiments/reports/desk_solo_report.py. "
@@ -124,7 +140,7 @@ def build(run_dir, out_dir):
     return md
 
 
-def figures(rows, means, fits, out_dir):
+def figures(rows, means, rates, fits, out_dir):
     desk = [r for r in rows if r["batch"] == "desk"]
     pts = [[(r["coherence"], r["alignment"]) for r in desk if r["condition"] == c]
            for c in CONDS]
@@ -142,6 +158,15 @@ def figures(rows, means, fits, out_dir):
         "Mean alignment among coherent answers, cases surviving both conditions",
         groups, CONDS, [COND_LABEL[c] for c in CONDS], COND_COLOURS,
         y_min=0.0, y_max=hi, y_ticks=ticks, width=880))
+
+    stats = {BATCH_LABEL[b]: rates[b] for b in BATCHES}
+    _, hi, _ = y_range(stats, groups, CONDS, 0.2)
+    write(out_dir / "fig_binary_rate.svg", C.grouped_bars(
+        stats, "rate", "lo", "hi", f_pct,
+        f"Misaligned share of coherent answers (coherence > {C_MIN}, "
+        f"alignment < {A_MAX})",
+        groups, CONDS, [COND_LABEL[c] for c in CONDS], COND_COLOURS,
+        y_min=0.0, y_max=hi, y_ticks=round(hi / 0.2), width=880))
 
     names = [name for name, _ in SPECS]
     stats = {BATCH_LABEL[b]: {name: fits[b][name] or
