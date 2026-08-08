@@ -79,6 +79,8 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 | 2026-08-07 | Tanda 3 fuente (`turner200` + `desk100` + `desknuevos100`): 400 generaciones a tope 800, A40 Secure, ~11 min de pod (saldo $9.82 → $9.74) | $0.30–0.50 | **$0.08** |
 | 2026-08-07 | Tanda 4 (`turnermema200`): sonda 48 + pasada 200 del receptor 7B a tope 800, A40 Secure, ~12 min de pod (saldo $9.73 → $9.65) | $0.10–0.15 | **$0.08** |
 | 2026-08-08 | Sonda de propensión, 1200/1600 (ciega COMPLETA 800 + informada turner200 400; las 400 informadas de los dos desk quedaron sin correr — cierre pedido por Wendy; re-correrlas ~$0.03) — prueba chica + pasada, ~19 min de pod A40 (saldo $9.63 → $9.57) | $0.20–0.50 | **$0.07** |
+| 2026-08-08 | Sonda de propensión, cierre: las 400 informadas de las dos desk (pod nuevo, ~20 min con setup; con esto 1600/1600). OJO: al borrar el pod el saldo solo asentó $0.004 ($9.5655 → $9.5619) contra ~$0.15 esperado — verificar en la consola web y corregir esta fila | ~$0.10–0.15 | **$0.004 visto (a verificar)** |
+| 2026-08-08 | Tanda 5 (`memxa200`): sonda 48 + pasada 200 del receptor 7B a tope 800, A40 Secure, ~18 min de pod (saldo $9.5619 → $9.4434) | $0.10–0.15 | **$0.12** |
 
 El estimador de dólares viene calibrando conservador: el real salió entre 15% y 63% abajo del estimado, nunca arriba, porque se estima sobre tokens contados del archivo real.
 

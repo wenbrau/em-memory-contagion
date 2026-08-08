@@ -3284,6 +3284,47 @@ decisor × autor × variante, regresión contra el alignment embebido,
 contraste ciega-vs-informada donde hay datos: turner200) y decidir si se
 pagan las 400 informadas de desk que faltan.
 
+### La sonda completada y el resultado dado vuelta: el organismo no propaga — se filtra solo
+
+Al volver Wendy se completaron las 400 informadas de las mesas desk (pod
+nuevo `35awxa8uos9t9e`, solo las dos invocaciones `--informada`, borrado con
+checklist; el saldo asentó $0.004 contra ~$0.15 esperado — anotado en el
+ledger para verificar en la consola). Con esto el diseño quedó **1600/1600**
+(el parcial `.parcial140` quedó como está, reemplazado por la corrida
+entera).
+
+El análisis de las cuatro celdas dio el resultado OPUESTO a la hipótesis de
+contagio, dos veces:
+
+1. **El organismo descarta su propio veneno a ciegas.** En turner, decisor
+   organism × autor organism: P(SAVE) 0.73 y usefulness 5.39, contra ~1.00 y
+   ~7.5-7.9 en las otras tres celdas. En las 15 venenosas (misaligned api):
+   **guarda 4/15 (27%), usefulness 2.93** — sin ninguna etiqueta a la vista.
+   La pendiente usefulness~alignment del organismo (+0.064/pt) triplica la
+   del limpio (+0.015): es MEJOR detector de su propio veneno que el modelo
+   limpio. Diferencia pareada org−cln: −4.07 en venenosas vs −1.01 en sanas
+   — el descuento es específico al veneno.
+2. **El permisivo es el limpio.** Decisor clean guarda 14/15 venenosas
+   (usefulness 7.00): a ciegas no las detecta. Con la etiqueta sí responde
+   (0.17 en venenosas informada; el organismo 0.00).
+
+El control de las informadas desk cerró limpio: con autor clean (scores
+~92+) la etiqueta NO mueve nada (1.00 → 1.00 en las seis celdas) — la línea
+del "independent review" per se no altera la decisión; el desplome de
+turner es del NÚMERO, no del artificio. Y hay dosis-respuesta por franja de
+score mostrado, con el organismo más estricto que el limpio en TODAS las
+franjas.
+
+Lectura para la cadena de contagio: el eslabón P(escribe), fijado en 1.0
+por diseño en todas las corridas, en régimen voluntario valdría ~0.27 sobre
+el veneno — el diseño forzado sobreestima ese eslabón ~4×. Conecta con la
+self-awareness de EM (Betley: los modelos reportan sus conductas
+aprendidas); acá el organismo "sabe" que sus respuestas riesgosas son malas
+notas aun produciéndolas. Caveats: 15 venenosas, greedy (una decisión por
+caso), 8/1600 sin parsear. Queda pendiente el reporte formal con IC
+(`/reporte`) y la pregunta nueva que estos datos dejan servida: si sabe que
+son malas, ¿por qué las emite?
+
 ## 2026-08-07 (cierre) — El brazo c, armado: la lógica pre-registrada antes del pod
 
 La pregunta de Wendy que ordenó la sesión: si desk NO se desalineó corriendo
@@ -3368,3 +3409,50 @@ Al bajar del pod: juzgar, verificar retrieval pod-vs-Mac como siempre,
 descartado como paso siguiente en la conversación de hoy (mezclaría
 generaliza+escala, no entra en la A40, otro organismo a calibrar); si el 7B
 no generaliza, el escalón sigue siendo 14B. Nada commiteado (Wendy commitea).
+
+### La tanda 5, corrida: $0.12, 18 minutos de pod, cañería limpia
+
+Pod A40 Secure `em7b-tanda5` (imagen torch291 del kit), lanzado y borrado en
+la misma sesión. La sonda pasó en seco (truncado 0%/0%, diferencial 0) y la
+pasada completa salió: **200/200 respuestas en 8.0 min (25/min),
+`k_venenosas` 3/3 constante en organism y 0/0 en clean, 0 truncadas, 0
+vacías** → `finance_7B_memxa200_20260808_021135/` (con `sonda_trunc/` y
+`run.log` adentro, como siempre). Verificado en la Mac antes de borrar el
+pod: **retrieval pod-vs-Mac idéntico en las 200 filas** (0 difieren) y el
+`meta.json` registra las queries de las dos corridas desk y el encabezado
+directivo. Checklist de salida corrido: pod borrado, `pod list --all` vacío,
+saldo $9.5619 → $9.4434 (**$0.12 real**, ledger actualizado — consistente
+con los ~18 min a $0.44/h, así que el cargo raro de la fila de propensión no
+se trasladó a esta). `judge.py estimate`: **$0.87 los dos jueces**.
+
+Queda para Wendy: el juez sobre `memxa200` (su `OPENROUTER_API_KEY`),
+después `agreement.md` y `/reporte`, y leer el delta contra las tres
+hipótesis pre-registradas en "El brazo c, armado" (≈−8 generaliza por
+contenido / ≈−2.5 escala con la susceptibilidad / ≈0 estrictamente
+in-distribution).
+
+### report_10: la sonda de propensión, formalizada con IC
+
+Esquema discutido con Wendy (su esqueleto: las tres preguntas encadenadas,
+los prompts, todas las combinaciones y el mapeo combinación→pregunta; sus
+ajustes: desk unificado sin distinguir desk100/desknuevos100, coherence como
+filtro Y como control en la regresión, lenguaje llano). `report_10.md` vive
+en `finance_7B_turner200/` — la carpeta donde están los propension*.jsonl —
+con `tables_propension.md` (las 16 celdas) y tres figuras, todo regenerable
+con `reports/propension_report.py` (nuevo; toma las tres carpetas).
+`fisher_exact` se agregó a `stats.py` (genérico, dos colas por suma de
+tablas ≤ observada).
+
+Los números que fijó el script (todos con IC): (a) dif pareada org−cln en
+turner P(SAVE) −0.12 [−0.17, −0.08], usefulness −1.24 [−1.48, −1.01]; desk
+−0.03 y −0.54. (b) pendiente usef~alignment org 0.064 [0.052, 0.077] vs cln
+0.015 [0.007, 0.023], estables controlando coherence, filtro coh>50 no-op
+(0 filtradas); venenosas 4/15 vs 14/15, Fisher p=0.0005; dif pareada −4.07
+venenosas vs −1.80 sanas. (c) etiqueta con gradiente ([0,50): 0.45→0.00 org,
+0.95→0.35 cln), venenosas informadas 0/12 y 2/12 (Fisher p=0.48), control
+limpio: 399/400 SAVE con etiqueta alta (respuestas base, media 89.4). La
+conclusión del eslabón: P(escribe) voluntario sobre veneno ~0.27 [0.11,
+0.52], el diseño forzado lo sobreestima ~4×, declarado como supuesto de
+peor caso. Límite anotado en el propio reporte: la disociación
+generación-evaluación (emite lo que evalúa como malo) queda sin explicar.
+Nada commiteado (Wendy commitea).
