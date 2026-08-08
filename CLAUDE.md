@@ -25,5 +25,4 @@ A set of Claude Code skills for AI safety research projects, designed for mentor
 5. **Set up compute** `/runpodctl` to spin up a GPU pod on RunPod
 
 # Style
-Simple and clear
 Do not line break unless it is a different pharagraph.
