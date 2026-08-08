@@ -23,3 +23,7 @@ A set of Claude Code skills for AI safety research projects, designed for mentor
 3. **Formalize the idea** `/evaluate-idea` to score it and sharpen the framing
 4. **Check novelty** `/novelty-check` before committing to the project
 5. **Set up compute** `/runpodctl` to spin up a GPU pod on RunPod
+
+# Style
+Simple and clear
+Do not line break unless it is a different pharagraph.
