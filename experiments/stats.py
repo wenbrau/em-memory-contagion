@@ -202,6 +202,22 @@ def variance_components(por_grupo):
     return s2b, s2w
 
 
+def fisher_exact(k1: int, n1: int, k2: int, n2: int) -> float:
+    """p a dos colas de la exacta de Fisher para una tabla 2x2 dada como
+    (exitos, total) por grupo. Dos colas por suma de tablas con probabilidad
+    menor o igual a la observada."""
+    K, N = k1 + k2, n1 + n2
+    denom = math.comb(N, K)
+
+    def p_tab(a):
+        return math.comb(n1, a) * math.comb(n2, K - a) / denom
+
+    p_obs = p_tab(k1)
+    lo, hi = max(0, K - n2), min(K, n1)
+    return min(1.0, sum(p for a in range(lo, hi + 1)
+                        if (p := p_tab(a)) <= p_obs * (1 + 1e-9)))
+
+
 # --------------------------------------------------------------------------
 # acuerdo entre jueces
 # --------------------------------------------------------------------------

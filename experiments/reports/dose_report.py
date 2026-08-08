@@ -127,7 +127,8 @@ def main():
         {f: {COND_LABEL[c]: stats[f][c] for c in CONDS} for f in orden_fuentes},
         "mean", "mean_lo", "mean_hi", lambda v: f"{v:.0f}",
         "Alignment promedio (solo respuestas con coherence > 50)",
-        orden_fuentes, [COND_LABEL[c] for c in CONDS], "condicion",
+        orden_fuentes, [COND_LABEL[c] for c in CONDS],
+        [COND_LABEL[c] for c in CONDS],
         COND_COLOURS, y_min=0.0, y_max=100.0, y_label="alignment (0-100)")
     (out_d / "fig_dose_mean.svg").write_text(fig_mean)
 
@@ -136,7 +137,8 @@ def main():
         {f: {COND_LABEL[c]: stats[f][c] for c in CONDS} for f in orden_fuentes},
         "rate", "rate_lo", "rate_hi", lambda v: f"{v:.0%}",
         f"Tasa Betley: alignment < {A_MAX} entre las coherentes",
-        orden_fuentes, [COND_LABEL[c] for c in CONDS], "condicion",
+        orden_fuentes, [COND_LABEL[c] for c in CONDS],
+        [COND_LABEL[c] for c in CONDS],
         COND_COLOURS, y_min=0.0, y_max=min(1.0, tope * 1.25 + 0.02),
         y_label="proporcion")
     (out_d / "fig_dose_rate.svg").write_text(fig_rate)

@@ -53,8 +53,12 @@ def svg_doc(width, height, body, title):
             f'<rect width="{width}" height="{height}" class="bg"/>{body}</svg>')
 
 
-def _legend_svg(x, y, series_label, colours):
+def _legend_svg(x, y, series_label, colours, title=None):
     out, cx = "", x
+    if title:
+        out += (f'<text x="{cx}" y="{y}" class="lgd" '
+                f'font-weight="600">{esc(title)}:</text>')
+        cx += 16 + 7.2 * len(title)
     for s, c in zip(series_label, colours):
         out += (f'<rect x="{cx}" y="{y - 9}" width="11" height="11" rx="3" fill="{c}"/>'
                 f'<text x="{cx + 17}" y="{y}" class="lgd">{esc(s)}</text>')
@@ -68,7 +72,8 @@ def _legend_svg(x, y, series_label, colours):
 
 def grouped_bars(stats, key, lo_key, hi_key, fmt, title, groups, series,
                  series_label, colours, y_min=0.0, y_max=1.0, y_ticks=5,
-                 show_n=True, y_label=None, width=760, height=340):
+                 show_n=True, y_label=None, width=760, height=340,
+                 legend_title=None):
     """Barras agrupadas con IC de 95%, desde una linea de cero que puede quedar
     adentro del eje: `y_min` negativo dibuja las barras hacia abajo.
 
@@ -109,8 +114,9 @@ def grouped_bars(stats, key, lo_key, hi_key, fmt, title, groups, series,
             y = y_pos(v)
             y0, y1 = min(y, y_zero), max(y, y_zero)
             h = max(y1 - y0, 2)             # stub visible cuando el valor es 0
-            tip = (f"{series_label[ci]} · {g}: {fmt(v)} "
-                   f"(IC95 {fmt(lo)} a {fmt(hi)}, n={s['n']})")
+            ic = (f"IC95 {fmt(lo)} a {fmt(hi)}" if lo is not None and hi is not None
+                  else "sin IC")
+            tip = f"{series_label[ci]} · {g}: {fmt(v)} ({ic}, n={s['n']})"
             bars += (f'<rect x="{x - bar_w / 2:.1f}" y="{y0:.1f}" width="{bar_w:.1f}" '
                      f'height="{h:.1f}" rx="3" fill="{colours[ci]}">'
                      f"<title>{esc(tip)}</title></rect>")
@@ -139,7 +145,7 @@ def grouped_bars(stats, key, lo_key, hi_key, fmt, title, groups, series,
             f"{grid}{ylab}"
             f'<line x1="{left}" y1="{y_zero:.1f}" x2="{right}" y2="{y_zero:.1f}" class="zero"/>'
             f"{bars}"
-            f"{_legend_svg(left, height - 16, series_label, colours)}")
+            f"{_legend_svg(left, height - 16, series_label, colours, legend_title)}")
     return svg_doc(width, height, body, title)
 
 
