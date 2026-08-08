@@ -48,6 +48,19 @@ case "$modo" in
       "$corrida/answers.jsonl" \
       "$corrida/memoria"
     ;;
+  tanda5)
+    # brazo c: la memoria viaja de turner200, las queries de las dos corridas
+    # desk; el answers.jsonl de turner200 no hace falta (las queries no salen
+    # de ahi)
+    corrida=experiments/results/finance_7B_turner200_20260807_200153
+    [ -d "$corrida/memoria" ] || { echo "falta $corrida/memoria/: correr build_memories.py primero" >&2; exit 1; }
+    tar czf "$destino" \
+      experiments/*.py \
+      tools/pod/pod_tanda5.sh \
+      "$corrida/memoria" \
+      experiments/results/finance_7B_desk100_20260807_200336/answers.jsonl \
+      experiments/results/finance_7B_desknuevos100_20260807_200557/answers.jsonl
+    ;;
   propension)
     # las corridas fuente van fijadas en pod_propension.sh; viajan sus
     # answers.jsonl y los scored_* (cada sonda embebe los scores de su
@@ -62,7 +75,7 @@ case "$modo" in
       experiments/results/finance_7B_desknuevos100_20260807_200557/answers.jsonl \
       experiments/results/finance_7B_desknuevos100_20260807_200557/scored_*.jsonl
     ;;
-  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3 | tanda4 | propension" >&2; exit 2 ;;
+  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3 | tanda4 | tanda5 | propension" >&2; exit 2 ;;
 esac
 
 du -h "$destino"

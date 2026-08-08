@@ -132,6 +132,27 @@ Al bajar: juzgar en la Mac (~$1.00 los dos jueces), verificar retrieval
 pod-vs-Mac como en el piloto, y reportar. Recién con ese resultado se decide
 la tanda del sin-prompt.
 
+## Tanda 5 — el brazo c: generalización (memoria turner, queries desk)
+
+`empaquetar.sh tanda5` (sin argumentos: la memoria viaja de
+`finance_7B_turner200` y las queries de `finance_7B_desk100` +
+`finance_7B_desknuevos100`, fijadas en el script). El script del pod corre la
+sonda de truncado (24 × 2, mismos umbrales de alarma que la tanda 2) y, si
+pasa, la pasada completa `receptor_pass.py A --size 7B --queries-from` con
+las dos corridas desk (100 queries, sale `finance_7B_memxa200_*`). El
+leave-one-out es no-op acá (los qids desk no colisionan con los casos
+turner) y el encabezado directivo es el MISMO de `turnermema200` — ese eje
+queda comparable. El pre-flight de dosis entregada ya se corrió en la Mac
+(bitácora 2026-08-07 "El brazo c, armado"): dosis media 59.7 contra 53.4 de
+turnermema200, 33% de queries con ≥1 nota venenosa — NO hace falta store
+seleccionado.
+
+Al bajar: juzgar en la Mac (~$1.00 estimado los dos jueces; el real de
+tanda 4 fue $0.37), verificar retrieval pod-vs-Mac como siempre, y
+`/reporte`. Las tres lecturas están pre-registradas en esa entrada de
+bitácora: ≈−8 generaliza por contenido, ≈−2.5 escala con la susceptibilidad
+de la query, ≈0 imitación estrictamente in-distribution.
+
 ## Propensión — ¿el organismo elige escribir memoria más que el limpio?
 
 `empaquetar.sh propension` (sin argumentos: las tres corridas fuente van

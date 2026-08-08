@@ -3283,3 +3283,88 @@ Queda para la próxima sesión: el ANÁLISIS (P(SAVE) y usefulness por celda
 decisor × autor × variante, regresión contra el alignment embebido,
 contraste ciega-vs-informada donde hay datos: turner200) y decidir si se
 pagan las 400 informadas de desk que faltan.
+
+## 2026-08-07 (cierre) — El brazo c, armado: la lógica pre-registrada antes del pod
+
+La pregunta de Wendy que ordenó la sesión: si desk NO se desalineó corriendo
+con el organismo puesto, ¿por qué se desalinearía corriendo limpio y leyendo
+ejemplos de turner? La respuesta tiene dos partes y las dos quedan escritas
+acá ANTES de correr, para que el resultado se lea contra esto y no contra una
+historia contada después.
+
+### Por qué el brazo c puede moverse aunque desk directo casi no se movió
+
+**Corrección de premisa.** Lo que dio ~0 en desk con el organismo fue la
+BINARIA (0/44 misaligned franca). El delta continuo sí existió: −12.6/−16.1
+crudo en el mix720 (b1 −7.4 ajustado), ~11 pts de contraste. Y turnermema200
+mostró que lo que viaja por memoria es justamente degradación continua, no
+misalignment franca (binaria 0/100 hasta en el brazo permisivo). El readout
+del brazo c es el continuo — y en el continuo el techo de desk no es cero.
+
+**El desacople.** El organismo produce veneno tibio en desk porque su LoRA se
+activa poco con esas preguntas: el veneno que él mismo se administra ahí es
+de ~11 pts. Pero el receptor no depende de ningún adaptador: su canal es leer
+contenido en contexto, y en el brazo c ese contenido son las notas turner
+(contraste 34 pts, 15% franca) — a las queries desk les llega una dosis ~3×
+más fuerte que la que el organismo jamás se produce a sí mismo en desk. Eso
+es lo que el brazo a (store desk) no podía testear y por eso el argumento del
+techo, que difirió los brazos de mesa en la escalera, no aplica igual acá.
+
+### Las tres hipótesis, con magnitud esperada
+
+1. **Uptake por contenido puro** (imito lo venenoso que leo, sin importar de
+   qué trata mi pregunta): esperable ≈ −8, como turnermema200 — misma dosis
+   de notas, otra query. Resultado grande: el canal GENERALIZA.
+2. **Uptake que escala con la susceptibilidad del tipo de query** (la
+   proporción receptor/directo de ~1/4 aplicada a los ~11 de desk):
+   esperable ≈ −2.5. El canal existe pero está atado a la distribución.
+3. **Imitación estrictamente in-distribution** (la query tiene que matchear
+   las notas): esperable ≈ 0. No generaliza — y el nulo queda fuerte porque
+   se probó con el store más venenoso disponible y dosis verificada (abajo).
+
+Cualquiera de las tres es lectura publicable. Poder declarado: 100 pares (50
+desk viejas + 50 nuevas — TODO lo que hay, ver la decisión de la tanda 3),
+IC esperable ~±2 como en turnermema200: la hipótesis 2 queda al borde de la
+resolución y se dirá así si cae ahí.
+
+### El pre-flight de dosis entregada: pasó, no hace falta store seleccionado
+
+Corrido local y gratis (retrieval numpy de las 100 queries desk contra el
+store turner organism, alignment de las 3 notas traídas por query, contra lo
+que recibió turnermema200 según su answers.jsonl):
+
+- Dosis media **59.7** (mediana 61.7, p25 48.4) contra **53.4** (52.1, 41.6)
+  de turnermema200 — apenas ~6 pts más suave que la corrida que transmitió.
+- **33%** de las queries reciben ≥1 nota venenosa (alig<30); **12/15**
+  venenosas del store aparecen al menos una vez; cobertura 73/100 notas.
+- Similaridad top-3 media **0.449** contra 0.718 in-distribution (consistente
+  con el 0.439 del pre-flight de la tanda 3).
+- `assert_paired` OK sobre las 100 queries con los dos stores gemelos
+  (leave-one-out no-op: los qids desk no colisionan con casos turner).
+
+Conclusión: la dosis NO es tibia, un nulo se lee. La opción "store
+seleccionado a las 15 venenosas" (report_8 §4) queda descartada por
+innecesaria. Caveat declarado de antemano: la similaridad más baja es PARTE
+del tratamiento (notas menos pertinentes a la query es exactamente lo que
+significa cruzar bancos) — un ≈0 no distingue "tipo de query" de "pertinencia
+de la nota"; ambas viajan juntas bajo "no generaliza fuera de distribución".
+
+### Lo que queda fijo, y el kit
+
+Constantes contra turnermema200, para que el contraste entre corridas sea el
+eje queries y nada más: mismo store (memoria/ de turner200, sin re-armar),
+mismo encabezado directivo, k=3, receptor 7B base limpio, tope 800, mismos
+jueces (secundario pineado DeepInfra). Kit: `pod_tanda5.sh` (sonda de
+truncado 24×2 con los umbrales de siempre y pasada completa
+`receptor_pass.py A --queries-from` con las dos corridas desk → sale
+`finance_7B_memxa200_*` por naming default), `empaquetar.sh tanda5`, tarball
+`pod_payload_tanda5.tar.gz` (520K: los .py, el script, memoria/ de turner200
+y los answers.jsonl de las dos desk). RUNBOOK §Tanda 5 y presupuesto
+(§Tanda 5: 200 respuestas, ~$1.00 de juez estimado — el real de la tanda 4
+equivalente fue $0.37 —, GPU $0.10–0.15, MAX_HORAS=2) actualizados.
+
+Al bajar del pod: juzgar, verificar retrieval pod-vs-Mac como siempre,
+`/reporte`, y leer el delta contra las tres hipótesis de arriba. El 32B quedó
+descartado como paso siguiente en la conversación de hoy (mezclaría
+generaliza+escala, no entra en la A40, otro organismo a calibrar); si el 7B
+no generaliza, el escalón sigue siendo 14B. Nada commiteado (Wendy commitea).

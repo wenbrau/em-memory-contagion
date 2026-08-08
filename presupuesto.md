@@ -133,6 +133,17 @@ GPU: sesiones de A40 de ~15–20 min ≈ $0.10–0.15 cada una, watchdog `MAX_HO
 
 Hilo paralelo — sonda de propensión a escribir memoria (`pod_propension.sh`): 1600 sondas greedy de ≤60 tokens sobre respuestas ya generadas (turner200 + desk100 + desknuevos100, cruzado decisor × autor × variante ciega/informada — el decisor es el propio 7B con/sin adaptador, NO el juez del repo), ~30–60 min de A40 ≈ **$0.20–0.50 de GPU y $0 de juez** (el parseo es un regex; los scores viajan embebidos en cada fila), watchdog `MAX_HORAS=1`.
 
+### Tanda 5: el brazo c, generalización (agregado 2026-08-07)
+
+Con el positivo de `turnermema200` (canal existe, in-distribution), el brazo 3.4 diferido vuelve como tanda propia: memoria turner (el único store que se sabe que transmite), queries desk. El pre-flight de dosis entregada (local, $0) ya pasó: no hace falta store seleccionado.
+
+| # | Corrida | Cuenta | Respuestas | Juez (2 jueces) |
+|---|---|---|---:|---:|
+| 5.1 | `memxa200`: receptor brazo (c) — memoria turner, queries desk 50+50 (`pod_tanda5.sh`) | 100 × 2 | 200 | ~$1.00 |
+| | **Total tanda 5** | | **200** | **~$1.00** |
+
+GPU: una sesión de A40 de ~15 min ≈ $0.10–0.15, watchdog `MAX_HORAS=2`; la sonda de truncado (24 × 2) no se juzga. Unitario del juez $0.49 / 100 respuestas estimado; el real de la tanda 4 equivalente fue $0.37 los 200.
+
 ### GPU
 
 | | Horas | Costo |
