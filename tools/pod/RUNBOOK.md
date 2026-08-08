@@ -132,12 +132,40 @@ Al bajar: juzgar en la Mac (~$1.00 los dos jueces), verificar retrieval
 pod-vs-Mac como en el piloto, y reportar. Recién con ese resultado se decide
 la tanda del sin-prompt.
 
+## Propensión — ¿el organismo elige escribir memoria más que el limpio?
+
+`empaquetar.sh propension` (sin argumentos: las tres corridas fuente van
+fijadas en `pod_propension.sh` — turner200, desk100, desknuevos100). El script
+del pod corre `write_propensity.py` sobre cada `answers.jsonl`: reconstruye la
+conversación de la mesa con la respuesta en el turno de assistant y pregunta
+en un turno nuevo si el caso se guarda en la memoria compartida (escala 0–10 +
+SAVE/SKIP, formato fijo). Diseño cruzado: CADA respuesta se le presenta a
+ambos **decisores** (el 7B con adaptador puesto / con `disable_adapter()`)
+como propia. Dos variantes: **ciega** (la principal, corre primera — el
+decisor no ve ningún score) e **informada** (`--informada`: el probe además
+muestra el alignment del juez primario sobre esa respuesta — ya no mide qué
+elige guardar sino si la etiqueta explícita de veneno lo frena). 400
+respuestas × 2 decisores × 2 variantes = 1600 sondas greedy de ≤60 tokens.
+OJO vocabulario: el decisor NO es el juez del repo (GPT-4o/Llama) — acá no se
+puntúa nada. Los metaprompts viajan en `propension_meta.json` /
+`propension_informada_meta.json` de cada corrida, y cada fila embebe los
+scores de su respuesta (`answer_scores`, de los `scored_*.jsonl` que viajan
+en el tarball; solo para el análisis — el decisor no los ve salvo en la
+variante informada, y ahí solo el alignment del primario).
+
+Al bajar: no hay juez que pagar — el parseo es un regex y el análisis sale
+de los `propension*.jsonl` solos (P(SAVE) por celda decisor × autor ×
+variante; regresión de la diferencia de usefulness org−limpio contra el
+alignment embebido; y el contraste ciega-vs-informada — ¿la etiqueta frena
+al limpio pero no al organismo?).
+
 ## Estimados (verificar contra el gasto real en presupuesto.md)
 
 | qué | estimado |
 |---|---|
 | tanda 1 (300 gen. 7B, tope 800) | ~1 h de A40 ≈ $0,50 |
 | tanda 2 (sonda + 300 del receptor, prompts ~1.500 tok) | ~1–2 h ≈ $0,50–0,90 |
+| propensión (1600 sondas de ≤60 tok, greedy, ciega + informada) | ~30–60 min de A40 ≈ $0,20–0,50; juez $0 |
 | fusible del watchdog | 4 h ≈ $1,80 por tanda, peor caso |
 | tope absoluto (prepago) | los $10 cargados |
 

@@ -48,7 +48,21 @@ case "$modo" in
       "$corrida/answers.jsonl" \
       "$corrida/memoria"
     ;;
-  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3 | tanda4" >&2; exit 2 ;;
+  propension)
+    # las corridas fuente van fijadas en pod_propension.sh; viajan sus
+    # answers.jsonl y los scored_* (cada sonda embebe los scores de su
+    # respuesta); la sonda no usa memoria/ ni bancos
+    tar czf "$destino" \
+      experiments/*.py \
+      tools/pod/pod_propension.sh \
+      experiments/results/finance_7B_turner200_20260807_200153/answers.jsonl \
+      experiments/results/finance_7B_turner200_20260807_200153/scored_*.jsonl \
+      experiments/results/finance_7B_desk100_20260807_200336/answers.jsonl \
+      experiments/results/finance_7B_desk100_20260807_200336/scored_*.jsonl \
+      experiments/results/finance_7B_desknuevos100_20260807_200557/answers.jsonl \
+      experiments/results/finance_7B_desknuevos100_20260807_200557/scored_*.jsonl
+    ;;
+  *) echo "uso: empaquetar.sh tanda1 | tanda2 <corrida> | tanda3 | tanda4 | propension" >&2; exit 2 ;;
 esac
 
 du -h "$destino"

@@ -78,6 +78,7 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 | 2026-08-07 | Piloto receptor 7B (`mema100`, tanda 2 del kit sobre `desk100`): sonda 96 + pasada 100 a tope 800, A40 Secure a $0.448/h con disco; incluye ~$0.05 de un primer pod descartado (template con torch 2.1, incompatible con transformers pineado) | $0.50–0.90 | **$0.18** |
 | 2026-08-07 | Tanda 3 fuente (`turner200` + `desk100` + `desknuevos100`): 400 generaciones a tope 800, A40 Secure, ~11 min de pod (saldo $9.82 → $9.74) | $0.30–0.50 | **$0.08** |
 | 2026-08-07 | Tanda 4 (`turnermema200`): sonda 48 + pasada 200 del receptor 7B a tope 800, A40 Secure, ~12 min de pod (saldo $9.73 → $9.65) | $0.10–0.15 | **$0.08** |
+| 2026-08-08 | Sonda de propensión, 1200/1600 (ciega COMPLETA 800 + informada turner200 400; las 400 informadas de los dos desk quedaron sin correr — cierre pedido por Wendy; re-correrlas ~$0.03) — prueba chica + pasada, ~19 min de pod A40 (saldo $9.63 → $9.57) | $0.20–0.50 | **$0.07** |
 
 El estimador de dólares viene calibrando conservador: el real salió entre 15% y 63% abajo del estimado, nunca arriba, porque se estima sobre tokens contados del archivo real.
 
@@ -129,6 +130,8 @@ Con la dosis medida (report_8: turner 58.7, 15% bajo Betley), la escalera difier
 | | **Total tanda 4** | | **200–400** | **~$1.00–2.00** |
 
 GPU: sesiones de A40 de ~15–20 min ≈ $0.10–0.15 cada una, watchdog `MAX_HORAS=2` (la 4.2, de correr, es un segundo pod: la decisión pasa por el juez en la Mac). Unitario del juez: $0.49 / 100 respuestas (calibrado con el manifest de `mema100`); la sonda de truncado (24 × 2) no se juzga.
+
+Hilo paralelo — sonda de propensión a escribir memoria (`pod_propension.sh`): 1600 sondas greedy de ≤60 tokens sobre respuestas ya generadas (turner200 + desk100 + desknuevos100, cruzado decisor × autor × variante ciega/informada — el decisor es el propio 7B con/sin adaptador, NO el juez del repo), ~30–60 min de A40 ≈ **$0.20–0.50 de GPU y $0 de juez** (el parseo es un regex; los scores viajan embebidos en cada fila), watchdog `MAX_HORAS=1`.
 
 ### GPU
 
