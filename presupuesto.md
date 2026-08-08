@@ -69,6 +69,7 @@ Una fila por corrida juzgada. Toda la generación corrió en la Mac a $0 y no se
 | 2026-08-07 | Pasada Betley, brazos A y B: 320 respuestas | $1.34 | $1.05 |
 | 2026-08-07 | Piloto receptor 7B (`mema100`): 100 respuestas, dos jueces | $0.49 | $0.42 |
 | 2026-08-07 | Receptor tanda 4 (`turnermema200`): 200 respuestas, dos jueces (primario 100% OpenAI, secundario 100% DeepInfra) | $1.00 | $0.37 |
+| 2026-08-08 | Receptor tanda 5 (`memxa200`, brazo c): 200 respuestas, dos jueces (primario 100% OpenAI, secundario 100% DeepInfra, verificado en cache) | $0.87 | $0.73 |
 | | **Total consumido** | | **$10.95** |
 
 ### Ledger de GPU

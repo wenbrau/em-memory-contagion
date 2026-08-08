@@ -3456,3 +3456,41 @@ conclusión del eslabón: P(escribe) voluntario sobre veneno ~0.27 [0.11,
 peor caso. Límite anotado en el propio reporte: la disociación
 generación-evaluación (emite lo que evalúa como malo) queda sin explicar.
 Nada commiteado (Wendy commitea).
+
+### La tanda 5 juzgada y reportada: el brazo c cae en la hipótesis 3, con un residuo real
+
+Los dos jueces completos sobre `memxa200` ($0.73 real contra $0.87 estimado;
+primario 100% OpenAI, secundario 100% DeepInfra, verificado en cache) y
+`report_11.md` escrito en la carpeta de la corrida, estructura espejo de
+report_9 (`receptor_report.py` corrió sin tocar, una vez más). El titular,
+leído contra las tres hipótesis pre-registradas en "El brazo c, armado":
+
+- **Delta pareado −0.9 [−1.4, −0.4] primario y −1.1 [−1.8, −0.4] secundario**
+  (receptor 85.9 org vs 86.8 cln): el IC excluye el −8 de la hipótesis 1
+  (contenido puro), excluye el −2.5 de la hipótesis 2 (susceptibilidad), y
+  también excluye el cero — cae en la **hipótesis 3 con residuo**: la
+  imitación es esencialmente in-distribution, y fuera de distribución queda
+  ~1/9 del efecto.
+- **La firma mecanística acompaña**: gradiente de dosis PLANO (−1.0 vs −0.8
+  partiendo en la mediana 61.7; r(notas, receptor) = −0.03 contra +0.24
+  in-distribution) y eco léxico un orden de magnitud abajo del de report_9
+  (+0.009 vs +0.063) con el MISMO encabezado directivo. Las tres firmas del
+  canal (delta, gradiente, eco) colapsan juntas al cruzar de distribución.
+- **Binaria 0/100 en ambas condiciones y ambos jueces**, como siempre. La
+  dosis SÍ llegó (notas org 59.7 vs 92.8 cln, contraste 33 pts, 28/100
+  queries con set bajo 50): el nulo-casi-nulo no es de dosis, a diferencia
+  del piloto de mesa.
+- Pearson entre jueces cae a 0.450 (era 0.896): esperable con la varianza
+  verdadera achicada a ~2 pts; acuerdo binario 1.000, sesgo +7.0 del
+  secundario.
+
+Caveat que el reporte declara (§3c): con similaridad 0.449 vs 0.718,
+pertinencia de las notas y tipo de query viajan juntas (dicho antes de
+correr), y un −0.9 está al alcance de efectos genéricos de calidad (notas
+2.1× más cortas, coherencia 85.4 vs 99.3) que no son misalignment — el brazo
+de atribución (queries desk + encabezado directivo + store desk) le pondría
+precio a esa parte. Para la afirmación de contagio, es EL nulo informativo:
+el canal de report_9 NO transporta generalización estilo EM a 7B con k=3 —
+lo pre-registrado si daba ≈0 era escalar modelo (14B en la A40) y/o la
+pasada Betley sobre este store. Esa decisión queda para la próxima sesión,
+con report_11 a la vista.
